@@ -26,7 +26,7 @@ About 1,600 added and 600 removed lines across 26 files, plus two new files.
 
 1. Clone [PathOfBuilding-PoE2](https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2) and apply the files in `patches/` with `git am` or `git apply`.
 2. `npm ci && npm run build`
-3. Point your MCP client at `build/index.js` (see `claude_desktop_config.example.json`) and set `POB_CMD` to the LuaJIT executable in the PoB `runtime` folder.
+3. Point your MCP client at `build/index.js` (see `claude_desktop_config.example.json`) and set `POB_LUA_ENABLED=true`, `POB_FORK_PATH` to the PoB `src` folder and `POB_CMD` to the LuaJIT executable in the PoB `runtime` folder.
 
 ## Tests
 
