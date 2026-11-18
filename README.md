@@ -1,3 +1,41 @@
+# Path of Building MCP Server, PoE2 fork
+
+This is a fork of [ianderse/pob-mcp](https://github.com/ianderse/pob-mcp) adapted for **Path of Exile 2**. It lets an AI agent (Claude Code, Claude Desktop or any MCP client) load a build into the real Path of Building PoE2 calculation engine, change it, and read back exact numbers.
+
+The original project and its README (kept below) are by ianderse. Licence: GPL-3.0, same as the original.
+
+## What this fork adds
+
+About 1,600 added and 600 removed lines across 26 files, plus two new files.
+
+- **PoE2 engine support.** The Lua bridge talks to PathOfBuilding-PoE2 over stdio. Handlers for skills, gems, items, trees, leveling and validation were reworked for PoE2 rules (Spirit, PoE2 resist caps, PoE2 gem requirements).
+- **Six new tools** (99 total):
+  - `lua_get_dps_breakdown`: per-skill damage breakdown from the engine
+  - `lua_set_full_combat_state`: set charges, buffs and enemy state in one call
+  - `lua_simulate_change`: try an item, gem or passive change and get the before/after diff without saving
+  - `get_gem_breakpoints`: attribute and level breakpoints for a gem
+  - `fetch_poe_ninja_character`: import a public character from poe.ninja
+  - `find_resistance_gear`: search trade for gear that fixes a resist gap
+- **Trade for PoE2.** Query builder and client updated for the PoE2 trade API, with rate limiting.
+- **`patches/`**: fixes to the PoB-PoE2 engine itself, as `git format-patch` output:
+  - `calc-fixes.diff`: 8 calculation fixes (Ghost Dance, Ancestral Bond, Against the Darkness, Time-Lost jewels, Grinning Immolation, Scarred Faith, Corrupted Lifeforce, stat-set export)
+  - `engine-api.diff` and `item.diff`: the headless stdio API this server needs
+- **`skills/`**: eight agent skills (Claude Code `SKILL.md` format) that drive the server for real tasks: gear upgrades, theorycrafting, passive tree optimisation, crafting, economy, atlas, calculator fixes and patch-day checks. They reference helper scripts from my private lab that are not part of this repo yet, so read them as worked examples.
+
+## Setup
+
+1. Clone [PathOfBuilding-PoE2](https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2) and apply the files in `patches/` with `git am` or `git apply`.
+2. `npm ci && npm run build`
+3. Point your MCP client at `build/index.js` (see `claude_desktop_config.example.json`) and set `POB_CMD` to the LuaJIT executable in the PoB `runtime` folder.
+
+## Tests
+
+`npm test`: 191 of 201 pass. The same 10 tests fail on the original repository at the commit this fork is based on.
+
+---
+
+*Original README follows.*
+
 # Path of Building MCP Server
 
 An MCP (Model Context Protocol) server that enables Claude to analyze, modify, and optimize Path of Building builds using PoB's actual calculation engine.

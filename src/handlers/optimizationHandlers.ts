@@ -149,19 +149,38 @@ export async function handleSuggestOptimalNodes(
       if (gemText.includes('cold') || gemText.includes('ice') || gemText.includes('freeze') || gemText.includes('frost')) {
         buildKeywords.push('cold');
       }
-      if (gemText.includes('chaos') || gemText.includes('poison') || gemText.includes('blight')) {
+      if (gemText.includes('chaos') || gemText.includes('poison') || gemText.includes('blight') || gemText.includes('withering')) {
         buildKeywords.push('chaos');
       }
       if (gemText.includes('spell') || gemText.includes('arcane') || gemText.includes('cast')) {
         buildKeywords.push('spell');
       }
       if (!gemText.includes('summon') && !gemText.includes('minion') &&
-          (gemText.includes('strike') || gemText.includes('slash') || gemText.includes('attack'))) {
+          (gemText.includes('strike') || gemText.includes('slash') || gemText.includes('attack') || gemText.includes('shot') || gemText.includes('volley'))) {
         buildKeywords.push('attack');
       }
+      // PoE2-specific archetype detection
+      if (gemText.includes('totem') || gemText.includes('sigil') || gemText.includes('orb of')) {
+        buildKeywords.push('totem');
+      }
+      if (gemText.includes('crit') || gemText.includes('cast on critical') || gemText.includes('on crit')) {
+        buildKeywords.push('critical');
+      }
+      if (gemText.includes('herald')) {
+        buildKeywords.push('herald');
+      }
+      if (gemText.includes('blasphemy') || gemText.includes('curse') || gemText.includes('hex') || gemText.includes('mark of') || gemText.includes('punishment') || gemText.includes('temporal chains')) {
+        buildKeywords.push('curse');
+      }
+      // PoE2 weapon-type hints
+      if (gemText.includes('bow ') || gemText.includes('arrow')) buildKeywords.push('bow');
+      if (gemText.includes('crossbow') || gemText.includes('bolt')) buildKeywords.push('crossbow');
+      if (gemText.includes('spear') || gemText.includes('javelin')) buildKeywords.push('spear');
+      if (gemText.includes('staff') || gemText.includes('palm') || gemText.includes('quarterstaff')) buildKeywords.push('staff');
     } catch {}
 
-    // Map goal to search keywords, prioritising build archetype
+    // Map goal to search keywords, prioritising build archetype.
+    // PoE2 goals include 'spirit' (reservation pool) and 'crit' (PoE2's crit ceiling is higher).
     const goalKeywords: Record<string, string[]> = {
       damage: buildKeywords.length > 0
         ? [...buildKeywords.map(k => `${k} damage`), 'damage', 'critical']
@@ -169,11 +188,19 @@ export async function handleSuggestOptimalNodes(
       dps: buildKeywords.length > 0
         ? [...buildKeywords, 'cast speed', 'critical']
         : ['damage', 'critical', 'cast speed'],
-      defense: ['life', 'armour', 'evasion', 'block', 'energy shield'],
+      defense: ['life', 'armour', 'evasion', 'block', 'energy shield', 'spell suppression'],
       life: ['life', 'maximum life', 'life regeneration'],
       es: ['energy shield', 'maximum energy shield'],
-      resist: ['resistance', 'elemental resistance'],
+      resist: ['resistance', 'elemental resistance', 'chaos resistance'],
       speed: ['attack speed', 'cast speed', 'movement speed'],
+      // PoE2-specific goal types
+      spirit: ['spirit', 'maximum spirit', 'reservation'],
+      crit: ['critical hit chance', 'critical damage bonus', 'critical', 'crit'],
+      totem: ['totem', 'totem damage', 'totem placement speed'],
+      minion: ['minion', 'minion damage', 'minion life'],
+      projectile: ['projectile', 'projectile damage', 'projectile speed', 'fork', 'chain', 'pierce'],
+      ailment: ['ailment', 'ignite', 'shock', 'chill', 'freeze', 'poison', 'bleed'],
+      mana: ['mana', 'maximum mana', 'mana regeneration', 'cost of skills'],
     };
 
     const goal = goalString.toLowerCase();

@@ -39,11 +39,12 @@ export async function handleAddItem(
   });
 }
 
-// Known non-mod trailer lines that appear after mods in PoB raw item text
+// Known non-mod trailer lines that appear after mods in PoB raw item text.
+// PoE2-specific item flags: Corrupted, Mirrored, Sanctified, Desecrated.
 const ITEM_TRAILER_LINES = new Set([
-  'Corrupted', 'Fractured Item', 'Mirrored', 'Split', 'Synthesised Item',
-  'Veiled Prefix', 'Veiled Suffix', 'Elder Item', 'Shaper Item',
-  'Warlord Item', 'Crusader Item', 'Redeemer Item', 'Hunter Item',
+  'Corrupted', 'Mirrored', 'Sanctified',
+  'Desecrated Prefix', 'Desecrated Suffix',
+  'Fractured Item',
 ]);
 
 interface ModLine { line: string; type: string; }

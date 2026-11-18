@@ -106,11 +106,16 @@ export class CostBenefitAnalyzer {
    */
   private extractStats(listing: ItemListing): StatExtraction {
     const item = listing.item;
+    // PoE trade API mods contain link syntax: "[Term|Display]" or "[Term]".
+    // Strip both forms so substring matching works on the plain display text.
+    const stripLinks = (s: string) => s
+      .replace(/\[([^\]|]+)\|([^\]]+)\]/g, '$2')   // [Tag|Display] → Display
+      .replace(/\[([^\]]+)\]/g, '$1');             // [Term] → Term
     const allMods = [
       ...(item.implicitMods || []),
       ...(item.explicitMods || []),
       ...(item.craftedMods || [])
-    ].join('\n');
+    ].map(stripLinks).join('\n');
 
     const stats: StatExtraction = {
       life: this.extractStat(allMods, ['to maximum Life', 'maximum Life']),
@@ -127,7 +132,24 @@ export class CostBenefitAnalyzer {
       intelligence: this.extractStat(allMods, ['to Intelligence']),
     };
 
-    // Calculate total resist
+    // PoE2 mods commonly roll as "+#% to all Elemental Resistances" (especially on
+    // Prismatic rings + body armour rune slots). Distribute this across fire/cold/lightning
+    // so the value scorer counts it as the three-stat upgrade it really is.
+    const allElemRes = this.extractStat(allMods, ['to all Elemental Resistances', 'all Elemental Resistances']);
+    if (allElemRes > 0) {
+      stats.fireResist += allElemRes;
+      stats.coldResist += allElemRes;
+      stats.lightningResist += allElemRes;
+    }
+    // "+#% to all Resistances" rolls less commonly but adds chaos res too.
+    const allRes = this.extractStat(allMods, ['to all Resistances']);
+    if (allRes > 0) {
+      stats.fireResist += allRes;
+      stats.coldResist += allRes;
+      stats.lightningResist += allRes;
+      stats.chaosResist += allRes;
+    }
+
     stats.totalResist = stats.fireResist + stats.coldResist + stats.lightningResist + stats.chaosResist;
 
     // Extract DPS for weapons
@@ -244,19 +266,44 @@ export class CostBenefitAnalyzer {
     const amount = price.amount;
     const currency = price.currency;
 
-    // Standard conversions (these should be dynamic in production)
-    const defaultRates: Record<string, number> = {
+    const isPoE2 = (process.env.POE2_MODE ?? 'true').toLowerCase() !== 'false';
+
+    // In PoE2 the currency tiering is inverted from PoE1:
+    //   - Exalted Orb is the *basic* crafting currency (very cheap, used as base unit by many traders)
+    //   - Chaos Orb is mid-tier (~3-5 exalts equivalent depending on league)
+    //   - Divine Orb is the high-value reroll currency (~150-200 exalts mid-league)
+    //   - Mirror Shard/Mirror is top end (thousands of exalts)
+    // So our "chaos-equivalent" baseline still uses Chaos = 1 but the OTHER rates shift.
+    const poe2Rates: Record<string, number> = {
       'chaos': 1,
-      'divine': 180, // Example rate
-      'exalted': 20, // Example rate
-      'mirror': 100000, // Example rate
+      'exalted': 0.25,        // PoE2 exalt ≈ 1/4 chaos (fallback only)
+      'divine': 20,           // PoE2 fallback only — live rate from poe.ninja overrides via currencyRates Map
+      'annul': 6,             // PoE2 annul is more valuable than PoE1
+      'mirror': 25000,        // top tier
+      'mirror-shard': 1250,
+      'vaal': 0.4,
+      'regal': 0.2,
+      'alch': 0.15,
+      'aug': 0.05,
+      'transmute': 0.02,
+      'chance': 0.1,
+      'orb-of-binding': 0.1,
+      'gemcutters-prism': 0.5,
+      'artificers-orb': 0.3,
+    };
+    const poe1Rates: Record<string, number> = {
+      'chaos': 1,
+      'divine': 180,
+      'exalted': 20,
+      'mirror': 100000,
       'vaal': 0.5,
       'fusing': 0.4,
       'alchemy': 0.3,
       'chisel': 0.2,
     };
+    const defaultRates = isPoE2 ? poe2Rates : poe1Rates;
 
-    const rate = currencyRates?.get(currency) || defaultRates[currency] || 1;
+    const rate = currencyRates?.get(currency) ?? defaultRates[currency] ?? 1;
     return amount * rate;
   }
 

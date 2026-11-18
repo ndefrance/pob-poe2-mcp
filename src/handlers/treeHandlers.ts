@@ -201,6 +201,39 @@ export async function handleFindPath(
   showAlternatives?: boolean
 ) {
   try {
+    // PRIMARY PATH: when a Lua bridge is active, use its live-tree BFS. The TS-side
+    // tree cache is keyed by treeVersion and may be stale or PoE1-shaped — the bridge
+    // path uses build.spec.nodes directly from the loaded PoE2 calc engine.
+    if (context.getLuaClient) {
+      const luaClient = context.getLuaClient();
+      if (luaClient) {
+        try {
+          const numericTarget = Number(targetNodeId);
+          if (!isNaN(numericTarget)) {
+            const result = await luaClient.findPath(numericTarget);
+            if (result) {
+              const lines: string[] = ['=== Find Path to Node ==='];
+              if (result.alreadyAllocated) {
+                lines.push(`Node ${targetNodeId} is already allocated.`);
+              } else {
+                lines.push(`Target: ${result.named?.[result.named.length - 1]?.name ?? '?'} [${targetNodeId}]`);
+                lines.push(`Point cost: ${result.pointCost}`);
+                lines.push('');
+                lines.push('Path:');
+                for (const n of (result.named ?? [])) {
+                  const mark = n.allocated ? '✓' : ' ';
+                  lines.push(`  ${mark} [${n.id}] ${n.name} (${n.type})`);
+                }
+              }
+              return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+            }
+          }
+        } catch (bridgeErr) {
+          // fall through to legacy TS-side path
+        }
+      }
+    }
+
     let allocatedNodeIds: string[] = [];
     let treeVersion = 'Unknown';
 
@@ -351,7 +384,8 @@ export async function handleFindPath(
 export async function handleGetPassiveUpgrades(
   context: PassiveUpgradesContext,
   focus: 'dps' | 'defence' | 'both' = 'both',
-  maxResults: number = 10
+  maxResults: number = 10,
+  maxCandidates: number = 20
 ) {
   await context.ensureLuaClient();
   const luaClient = context.getLuaClient();
@@ -383,16 +417,22 @@ export async function handleGetPassiveUpgrades(
   const seen = new Set<string>();
   const candidates: any[] = [];
 
-  for (const keyword of keywords.slice(0, 4)) {
+  // Tight candidate cap — calcWith on each one is 100-300ms, so 60 candidates
+  // can take 30s+ on PoE2's larger tree and trip the MCP request timeout.
+  // Defaulting to 20 keeps the total < 10s for a typical build.
+  const perKeyword = Math.max(2, Math.ceil(maxCandidates / Math.min(keywords.length, 3)));
+  for (const keyword of keywords.slice(0, 3)) {
+    if (candidates.length >= maxCandidates) break;
     try {
       const results = await luaClient.searchNodes({
         keyword,
         nodeType: 'notable',
-        maxResults: 15,
+        maxResults: perKeyword,
         includeAllocated: false,
       });
       if (results && results.nodes) {
         for (const node of results.nodes) {
+          if (candidates.length >= maxCandidates) break;
           const id = String(node.id);
           if (!seen.has(id)) {
             seen.add(id);
@@ -422,10 +462,23 @@ export async function handleGetPassiveUpgrades(
 
   const scored: ScoredNode[] = [];
 
+  // Per-candidate hard deadline so one slow calcWith doesn't stall the whole call.
+  // Total budget = 30s; per-candidate = budget / candidates.
+  const totalBudgetMs = 30_000;
+  const perCandidateBudget = Math.max(500, Math.floor(totalBudgetMs / Math.max(1, candidates.length)));
+  const start = Date.now();
+  let failCount = 0;
+
   for (const node of candidates) {
+    if (Date.now() - start > totalBudgetMs) break;
+    if (failCount > 5) break;     // abort if calc engine keeps erroring
     try {
-      const out = await luaClient.calcWith({ addNodes: [node.id] });
-      if (!out) continue;
+      const calcPromise = luaClient.calcWith({ addNodes: [node.id] });
+      const out = await Promise.race([
+        calcPromise,
+        new Promise<null>(resolve => setTimeout(() => resolve(null), perCandidateBudget)),
+      ]);
+      if (!out) { failCount++; continue; }
 
       // calcWith returns raw Lua output; minion stats are nested under out.Minion
       // (unlike getStats() which remaps them to MinionTotalDPS etc.)

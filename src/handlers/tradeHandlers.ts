@@ -18,13 +18,18 @@ interface TradeContext {
 // Trade Site URL Helpers
 // ========================================
 
+function tradeSiteBase(): string {
+  return (process.env.POE2_MODE ?? 'true').toLowerCase() !== 'false'
+    ? 'https://www.pathofexile.com/trade2/search'
+    : 'https://www.pathofexile.com/trade/search';
+}
+
 function getTradeSearchUrl(league: string, searchId: string): string {
-  return `https://www.pathofexile.com/trade/search/${encodeURIComponent(league)}/${searchId}`;
+  return `${tradeSiteBase()}/${encodeURIComponent(league)}/${searchId}`;
 }
 
 function getTradeItemUrl(league: string, searchId: string, itemId: string): string {
-  // Individual items can be highlighted in the search results
-  return `https://www.pathofexile.com/trade/search/${encodeURIComponent(league)}/${searchId}#${itemId}`;
+  return `${tradeSiteBase()}/${encodeURIComponent(league)}/${searchId}#${itemId}`;
 }
 
 /**
@@ -40,9 +45,15 @@ export async function handleSearchTradeItems(
     max_price?: number;
     price_currency?: string;
     online_only?: boolean;
+    buyout_only?: boolean;
+    trade_mode?: 'instant' | 'instant_or_inperson' | 'inperson_online' | 'inperson_onlineleague' | 'any';
     rarity?: 'normal' | 'magic' | 'rare' | 'unique' | 'any';
+    item_rarity?: 'normal' | 'magic' | 'rare' | 'unique' | 'any';
     min_links?: number;
     stats?: Array<{ id: string; min?: number; max?: number }>;
+    mods?: Array<{ stat_id: string; min?: number; max?: number }>;
+    corrupted?: boolean;
+    identified?: boolean;
     sort?: 'price_asc' | 'price_desc';
     limit?: number;
   }
@@ -61,9 +72,17 @@ export async function handleSearchTradeItems(
       max_price,
       price_currency = 'chaos',
       online_only = true,
+      buyout_only = false,
+      trade_mode,
+      // Accept BOTH schema-aligned names (item_rarity, mods, stat_id) and legacy
+      // handler names (rarity, stats, id) so neither shape silently drops.
       rarity,
+      item_rarity,
       min_links,
       stats,
+      mods,
+      corrupted,
+      identified,
       sort = 'price_asc',
       limit = 5,
     } = args;
@@ -79,27 +98,51 @@ export async function handleSearchTradeItems(
       builder.withType(item_type);
     }
 
-    if (rarity) {
-      builder.withRarity(rarity);
+    const effectiveRarity = item_rarity ?? rarity;
+    if (effectiveRarity) {
+      builder.withRarity(effectiveRarity);
     }
 
     if (min_links) {
       builder.withLinks(min_links);
     }
 
+    // Normalize mods → stats shape: schema uses {stat_id, min, max}, builder wants {id, min, max}
+    const normalizedStats: Array<{ id: string; min?: number; max?: number }> = [];
+    if (mods && mods.length > 0) {
+      for (const m of mods) {
+        if (m && m.stat_id) normalizedStats.push({ id: m.stat_id, min: m.min, max: m.max });
+      }
+    }
     if (stats && stats.length > 0) {
-      builder.withStats(stats);
+      for (const s of stats) {
+        if (s && s.id) normalizedStats.push(s);
+      }
+    }
+    if (normalizedStats.length > 0) {
+      builder.withStats(normalizedStats);
     }
 
+    // corrupted/identified are accepted in the schema but the builder doesn't
+    // expose dedicated methods for them yet — silently no-op rather than fail.
+    void corrupted;
+    void identified;
+
+    // Map trade_mode aliases. 'inperson_onlineleague' is the default for the
+    // legacy online_only=true path; 'instant' selects PoE2 0.5 Instant Buyout.
+    let mappedMode = trade_mode;
+    if (trade_mode === 'inperson_onlineleague') mappedMode = undefined; // falls through to default
     builder.applyOptions({
       league,
       onlineOnly: online_only,
+      buyoutOnly: buyout_only,
       minPrice: min_price,
       maxPrice: max_price,
       priceCurrency: price_currency,
       sort,
       limit,
-    });
+      tradeMode: mappedMode,
+    } as any);
 
     const query = builder.build();
 
@@ -314,12 +357,54 @@ async function getCurrencyRatesMap(ninjaClient: PoeNinjaClient | undefined, leag
 
   try {
     const rates = await ninjaClient.getCurrencyExchangeMap(league);
-
-    // Map poe.ninja names to trade API currency names
     const mappedRates = new Map<string, number>();
 
-    // Common currency mappings
-    const nameMap: Record<string, string[]> = {
+    const isPoE2 = (process.env.POE2_MODE ?? 'true').toLowerCase() !== 'false';
+
+    // PoE2 currency display name → trade-API code aliases.
+    // Trade listings come back with short codes ('exalted', 'chaos', 'divine', 'annul',
+    // 'mirror-shard', etc.). poe.ninja returns full display names ('Exalted Orb',
+    // 'Chaos Orb', etc.). We need both in the rate map so price conversion catches
+    // every listing currency, regardless of which side names it.
+    const poe2NameMap: Record<string, string[]> = {
+      'Exalted Orb': ['exalted', 'exa', 'ex'],
+      'Chaos Orb': ['chaos', 'c'],
+      'Divine Orb': ['divine', 'div'],
+      'Orb of Annulment': ['annul', 'annulment'],
+      'Regal Orb': ['regal'],
+      'Vaal Orb': ['vaal'],
+      'Orb of Alchemy': ['alch', 'alchemy'],
+      'Orb of Augmentation': ['aug', 'augmentation'],
+      'Orb of Transmutation': ['transmute', 'transmutation'],
+      'Orb of Chance': ['chance'],
+      'Mirror of Kalandra': ['mirror'],
+      'Mirror Shard': ['mirror-shard'],
+      'Gemcutter\'s Prism': ['gcp', 'gemcutters-prism'],
+      'Artificer\'s Orb': ['artificers-orb', 'artificer'],
+      'Blacksmith\'s Whetstone': ['blacksmiths-whetstone', 'whetstone'],
+      'Arcanist\'s Etcher': ['arcanists-etcher', 'etcher'],
+      'Armourer\'s Scrap': ['armourers-scrap'],
+      'Fracturing Orb': ['fracturing'],
+      'Orb of Extraction': ['extraction'],
+      // PoE2 tier-prefixed currencies (Perfect/Greater)
+      'Perfect Exalted Orb': ['perfect-exalted', 'perfect-exa'],
+      'Perfect Chaos Orb': ['perfect-chaos'],
+      'Perfect Regal Orb': ['perfect-regal'],
+      'Greater Exalted Orb': ['greater-exalted'],
+      'Greater Chaos Orb': ['greater-chaos'],
+      'Greater Regal Orb': ['greater-regal'],
+      'Greater Jeweller\'s Orb': ['greater-jewellers'],
+      'Perfect Jeweller\'s Orb': ['perfect-jewellers'],
+      'Lesser Jeweller\'s Orb': ['lesser-jewellers', 'jewellers'],
+      'Vaal Cultivation Orb': ['vaal-cultivation'],
+      'Scroll of Wisdom': ['wisdom'],
+      // Boss / pinnacle drops sometimes used as trade currency
+      'Distilled Suffering': ['distilled-suffering'],
+      'Distilled Despair': ['distilled-despair'],
+      'Distilled Isolation': ['distilled-isolation'],
+    };
+
+    const poe1NameMap: Record<string, string[]> = {
       'Divine Orb': ['divine', 'div'],
       'Chaos Orb': ['chaos', 'c'],
       'Exalted Orb': ['exalted', 'exa', 'ex'],
@@ -337,12 +422,10 @@ async function getCurrencyRatesMap(ninjaClient: PoeNinjaClient | undefined, leag
       'Orb of Scouring': ['scouring', 'scour'],
     };
 
-    // Add mappings
-    for (const [fullName, chaosValue] of rates.entries()) {
-      // Add the full name
-      mappedRates.set(fullName, chaosValue);
+    const nameMap = isPoE2 ? poe2NameMap : poe1NameMap;
 
-      // Add short name mappings
+    for (const [fullName, chaosValue] of rates.entries()) {
+      mappedRates.set(fullName, chaosValue);
       for (const [key, aliases] of Object.entries(nameMap)) {
         if (fullName === key) {
           for (const alias of aliases) {
@@ -406,8 +489,26 @@ async function formatSearchResults(items: ItemListing[], totalResults: number, l
 
     if (price) {
       output += `   Price: ${price.amount} ${price.currency}`;
-      if (analysis.priceInChaos > 0 && price.currency !== 'chaos') {
-        output += ` (~${analysis.priceInChaos.toFixed(0)} chaos)`;
+      // Always surface the chaos-equivalent so anti-manipulation is one glance away.
+      // PoE2 traders sometimes list in unusual currencies (annul/regal/perfect-orbs)
+      // hoping buyers don't realize the conversion. The live poe.ninja rate makes
+      // the actual value explicit regardless of headline currency.
+      if (analysis.priceInChaos > 0) {
+        const chaos = analysis.priceInChaos;
+        // Show in chaos if reasonable, otherwise convert to divine for readability
+        const divineRate = currencyRates.get('Divine Orb') || currencyRates.get('divine') || 50;
+        if (chaos >= divineRate * 0.5) {
+          const inDivine = chaos / divineRate;
+          output += `  →  ${inDivine.toFixed(2)} div  (${chaos.toFixed(0)} chaos)`;
+        } else {
+          output += `  →  ${chaos.toFixed(1)} chaos`;
+        }
+        // Flag if the listed currency isn't a common one — possible mispricing
+        const listingCurr = (price.currency || '').toLowerCase();
+        const commonCurrs = new Set(['chaos','divine','exalted','mirror']);
+        if (!commonCurrs.has(listingCurr)) {
+          output += `  ⚠️ (verify rate of '${price.currency}' before buying)`;
+        }
       }
       output += `\n`;
     } else {
@@ -442,9 +543,31 @@ async function formatSearchResults(items: ItemListing[], totalResults: number, l
     const statParts: string[] = [];
     if (stats.life > 0) statParts.push(`+${stats.life} Life`);
     if (stats.es > 0) statParts.push(`+${stats.es} ES`);
-    if (stats.totalResist > 0) statParts.push(`+${stats.totalResist}% Res`);
+    if (stats.fireResist) statParts.push(`+${stats.fireResist}% Fire`);
+    if (stats.coldResist) statParts.push(`+${stats.coldResist}% Cold`);
+    if (stats.lightningResist) statParts.push(`+${stats.lightningResist}% Lightning`);
+    if (stats.chaosResist) statParts.push(`+${stats.chaosResist}% Chaos`);
     if (statParts.length > 0) {
-      output += `   Stats: ${statParts.join(', ')}\n`;
+      output += `   Key stats: ${statParts.join(', ')}\n`;
+    }
+
+    // Show full mod text (implicit + explicit + rune) so the LLM sees what's
+    // actually on the item, not just the headline stats.
+    const allMods: string[] = [];
+    if (item.implicitMods && item.implicitMods.length) {
+      allMods.push(...item.implicitMods.map((m: string) => `  [implicit] ${m}`));
+    }
+    if ((item as any).runeMods && (item as any).runeMods.length) {
+      allMods.push(...(item as any).runeMods.map((m: string) => `  [rune] ${m}`));
+    }
+    if (item.explicitMods && item.explicitMods.length) {
+      allMods.push(...item.explicitMods.map((m: string) => `  ${m}`));
+    }
+    if ((item as any).craftedMods && (item as any).craftedMods.length) {
+      allMods.push(...(item as any).craftedMods.map((m: string) => `  [crafted] ${m}`));
+    }
+    if (allMods.length > 0) {
+      output += `   Mods:\n${allMods.join('\n')}\n`;
     }
 
     output += `   ${seller.online ? '🟢' : '🔴'} ${seller.name}\n`;

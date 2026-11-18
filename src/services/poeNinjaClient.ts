@@ -78,7 +78,10 @@ export interface ArbitrageOpportunity {
  * Client for fetching data from poe.ninja API
  */
 export class PoeNinjaClient {
-  private baseUrl = 'https://poe.ninja/poe1/api/economy/exchange/current';
+  // poe.ninja has separate PoE1 and PoE2 economy data (poe.ninja/poe2/economy/)
+  private baseUrl = process.env.POE2_MODE !== 'false'
+    ? 'https://poe.ninja/poe2/api/economy/exchange/current'
+    : 'https://poe.ninja/poe1/api/economy/exchange/current';
   private cache = new Map<string, { data: any; timestamp: number }>();
   private cacheTTL = 300000; // 5 minutes
 
@@ -135,17 +138,66 @@ export class PoeNinjaClient {
   }
 
   /**
-   * Build a currency exchange rate map (all rates in chaos equivalent)
+   * Build a currency exchange rate map (all rates in chaos equivalent).
+   *
+   * Handles BOTH response shapes:
+   *   - Legacy: `lines[].currencyTypeName` + `lines[].chaosEquivalent`
+   *   - Current (poe.ninja PoE2 0.5+): `core.rates` (units per 1 primary currency)
+   *     + `core.items[]` (id→name lookup) + `lines[].primaryValue` (price in primary).
+   *     The primary currency is `core.primary` (typically "divine" for PoE2).
+   *
+   * For the new shape:
+   *   primaryChaosValue = core.rates.chaos (chaos per 1 primary)
+   *   for each currency X:
+   *     chaosEquivalent = lines[X].primaryValue * primaryChaosValue
    */
   async getCurrencyExchangeMap(league: string): Promise<Map<string, number>> {
-    const data = await this.getCurrencyRates(league);
+    const data: any = await this.getCurrencyRates(league);
     const rateMap = new Map<string, number>();
     rateMap.set('Chaos Orb', 1.0);
-    for (const line of data.lines) {
-      if (line.currencyTypeName && line.chaosEquivalent > 0) {
-        rateMap.set(line.currencyTypeName, line.chaosEquivalent);
+
+    // Legacy path
+    if (Array.isArray(data.lines) && data.lines.length > 0 && data.lines[0]?.currencyTypeName) {
+      for (const line of data.lines) {
+        if (line.currencyTypeName && line.chaosEquivalent > 0) {
+          rateMap.set(line.currencyTypeName, line.chaosEquivalent);
+        }
       }
+      return rateMap;
     }
+
+    // New shape: derive everything from core.rates + lines[].primaryValue
+    const primaryChaosValue = Number(data.core?.rates?.chaos);
+    if (!primaryChaosValue || primaryChaosValue <= 0) {
+      // Can't anchor to chaos — leave rateMap with only the Chaos Orb base entry,
+      // caller will fall back to hardcoded rates for everything else.
+      return rateMap;
+    }
+
+    // Build id → display name lookup from both core.items and items
+    const idToName: Record<string, string> = {};
+    for (const item of (data.core?.items ?? [])) {
+      if (item?.id && item?.name) idToName[item.id] = item.name;
+    }
+    for (const item of (data.items ?? [])) {
+      if (item?.id && item?.name) idToName[item.id] = item.name;
+    }
+
+    // Primary currency (typically "divine") — chaosEq = primaryChaosValue
+    const primaryId = data.core?.primary;
+    if (primaryId) {
+      const primaryName = idToName[primaryId] ?? primaryId;
+      rateMap.set(primaryName, primaryChaosValue);
+    }
+
+    // Per-line currencies: chaosEq = primaryValue × primaryChaosValue
+    for (const line of (data.lines ?? [])) {
+      if (!line?.id || typeof line.primaryValue !== 'number' || line.primaryValue <= 0) continue;
+      const name = idToName[line.id] ?? line.id;
+      if (rateMap.has(name)) continue; // already set (primary or Chaos Orb)
+      rateMap.set(name, line.primaryValue * primaryChaosValue);
+    }
+
     return rateMap;
   }
 

@@ -1,0 +1,132 @@
+diff --git a/src/Classes/Item.lua b/src/Classes/Item.lua
+index b6690dc..6f1040b 100644
+--- a/src/Classes/Item.lua
++++ b/src/Classes/Item.lua
+@@ -1066,7 +1066,7 @@ function ItemClass:ParseRaw(raw, rarity, highQuality)
+ 					self.name = self.name:gsub(" %(.+%)","")
+ 				end
+ 				if not baseName then
+-					baseName = line:gsub("^Superior ", "")
++					baseName = line:gsub("^Superior ", ""):gsub("^Advanced ", ""):gsub("^Expert ", "")
+ 				end
+ 				if baseName == "Two-Toned Boots" then
+ 					baseName = "Two-Toned Boots (Armour/Energy Shield)"
+diff --git a/src/HeadlessWrapper.lua b/src/HeadlessWrapper.lua
+index 5fcf3ae..1276871 100644
+--- a/src/HeadlessWrapper.lua
++++ b/src/HeadlessWrapper.lua
+@@ -32,6 +32,114 @@ function require(name)
+ end
+ 
+ 
++-- Determine script directory for robust relative loading
++local function get_script_dir()
++  local info = debug and debug.getinfo and debug.getinfo(1, 'S')
++  local src = info and info.source or ''
++  if type(src) == 'string' and src:sub(1,1) == '@' then
++    local path = src:sub(2)
++    return (path:gsub('[^/\\]+$', '')):gsub('[ /\\]$', '')
++  end
++  return ''
++end
++local POB_SCRIPT_DIR = get_script_dir()
++if POB_SCRIPT_DIR == '' then
++  local f1 = io.open('HeadlessWrapper.lua', 'r')
++  if f1 then f1:close(); POB_SCRIPT_DIR = '.' end
++end
++if POB_SCRIPT_DIR == '' then
++  local f2 = io.open('src/HeadlessWrapper.lua', 'r')
++  if f2 then f2:close(); POB_SCRIPT_DIR = 'src' end
++end
++if POB_SCRIPT_DIR ~= '' then
++  _G.POB_SCRIPT_DIR = POB_SCRIPT_DIR
++  local pathSegs = {}
++  table.insert(pathSegs, POB_SCRIPT_DIR .. '/?.lua')
++  table.insert(pathSegs, POB_SCRIPT_DIR .. '/?/init.lua')
++  table.insert(pathSegs, package.path)
++  package.path = table.concat(pathSegs, ';')
++  local runtimeCandidates = {
++    POB_SCRIPT_DIR .. '/runtime/lua',
++    POB_SCRIPT_DIR .. '/../runtime/lua',
++    'runtime/lua',
++    '../runtime/lua',
++  }
++  for _, rp in ipairs(runtimeCandidates) do
++    local test = io.open(rp .. '/xml.lua', 'r')
++    if test then
++      test:close()
++      if not string.find(package.path, rp .. '/?.lua', 1, true) then
++        package.path = rp .. '/?.lua;' .. rp .. '/?/init.lua;' .. package.path
++      end
++      break
++    end
++  end
++  local cpathRuntime = {
++    POB_SCRIPT_DIR .. '/runtime',
++    POB_SCRIPT_DIR .. '/../runtime',
++    'runtime',
++    '../runtime',
++  }
++  for _, rp in ipairs(cpathRuntime) do
++    local f = io.open(rp .. '/lua-utf8.dll', 'r') or io.open(rp .. '/lua-utf8.so', 'r')
++    if f then
++      f:close()
++      if package.cpath and not string.find(package.cpath, rp .. '/?.dll', 1, true) then
++        package.cpath = rp .. '/?.dll;' .. rp .. '/?.so;' .. (package.cpath or '')
++      end
++      break
++    end
++  end
++end
++
++local function has_flag(flag)
++  if type(arg) ~= 'table' then return false end
++  for i = 1, #arg do if arg[i] == flag then return true end end
++  return false
++end
++
++if os.getenv('POB_API_STDIO') == '1' or has_flag('--stdio') then
++  if type(_G.utf8) ~= 'table' then
++    local ok_u, mod = pcall(require, 'utf8')
++    if ok_u and type(mod) == 'table' then
++      _G.utf8 = mod
++    else
++      local stubCandidates = {
++        (POB_SCRIPT_DIR ~= '' and (POB_SCRIPT_DIR .. '/utf8.lua')) or nil,
++        'src/utf8.lua',
++      }
++      for _, sp in ipairs(stubCandidates) do
++        if sp then
++          local ok2, stub = pcall(dofile, sp)
++          if ok2 and type(stub) == 'table' then _G.utf8 = stub; break end
++        end
++      end
++    end
++  end
++  dofile("Launch.lua")
++  __mainObject__.continuousIntegrationMode = os.getenv("CI")
++  runCallback("OnInit")
++  runCallback("OnFrame")
++  if __mainObject__.promptMsg then
++    io.stderr:write('[HeadlessWrapper] Error during init: ' .. tostring(__mainObject__.promptMsg) .. '\n')
++    error(__mainObject__.promptMsg)
++  end
++  function newBuild()
++    __mainObject__.main:SetMode("BUILD", false, "Help, I'm stuck in Path of Building!")
++    runCallback("OnFrame")
++  end
++  function loadBuildFromXML(xmlText, name)
++    __mainObject__.main:SetMode("BUILD", false, name or "", xmlText)
++    runCallback("OnFrame")
++  end
++  _G.newBuild = newBuild
++  _G.loadBuildFromXML = loadBuildFromXML
++  _G.build = __mainObject__.main.modes["BUILD"]
++  local srvPath = (POB_SCRIPT_DIR ~= '' and (POB_SCRIPT_DIR .. '/API/Server.lua')) or 'API/Server.lua'
++  dofile(srvPath)
++  return
++end
++
+ dofile("Launch.lua")
+ 
+ -- Prevents loading of ModCache

@@ -49,36 +49,72 @@ export function inferBuildArchetype(
 ): string {
   if (!className) return 'unknown';
 
-  // Life/ES detection
-  const hasES = (stats?.energyShield || 0) > 500;
-  const hasLife = (stats?.life || 0) > 2000;
-  const isLowLife = hasLife && (stats?.life || 0) < 2500 && hasES;
+  // PoE2 has lower absolute Life pools than PoE1 — endgame Life is often 1500-3000
+  // with ES doing the heavy lifting. Adjust thresholds accordingly.
+  const hasES = (stats?.energyShield || 0) > 300;
+  const hasLife = (stats?.life || 0) > 1200;
+  const isLowLife = hasLife && (stats?.life || 0) < 1500 && hasES;
 
-  // Defense type
   const evasion = stats?.evasion || 0;
   const armour = stats?.armour || 0;
   let defenseType = '';
   if (evasion > armour * 1.5) defenseType = 'evasion';
   else if (armour > evasion * 1.5) defenseType = 'armour';
-  else if (evasion > 1000 && armour > 1000) defenseType = 'hybrid';
+  else if (evasion > 800 && armour > 800) defenseType = 'hybrid';
 
-  // Ascendancy-specific
   const ascend = ascendClassName?.toLowerCase() || '';
-  if (ascend.includes('necro')) return 'minion';
-  if (ascend.includes('occultist') && hasES) return 'chaos-dot-es';
-  if (ascend.includes('assassin')) return 'crit-attack';
-  if (ascend.includes('pathfinder')) return 'flask-based';
-  if (ascend.includes('berserker') || ascend.includes('juggernaut')) return 'melee-tank';
-  if (ascend.includes('deadeye') || ascend.includes('raider')) return 'bow-attack';
-  if (ascend.includes('chieftain')) return 'fire-attack';
-  if (ascend.includes('elementalist')) return 'elemental-spell';
+  const cls = className.toLowerCase();
 
-  // General patterns
+  // PoE2 ascendancy → archetype mapping
+  // Witch: Infernalist (fire/minion), Blood Mage (spell/sacrifice), Lich (dot/curse), Abyssal Lich (chaos/dot)
+  if (ascend.includes('infernalist'))    return 'minion-fire-spell';
+  if (ascend.includes('blood mage'))     return 'spell-sacrifice';
+  if (ascend.includes('lich') || ascend.includes('abyssal lich')) return 'chaos-dot-spell';
+  // Sorceress: Stormweaver (lightning crit), Chronomancer (time/cooldown)
+  if (ascend.includes('stormweaver'))    return 'crit-spell';
+  if (ascend.includes('chronomancer'))   return 'cooldown-spell';
+  // Ranger: Deadeye (projectile attack), Pathfinder (flask/poison)
+  if (ascend.includes('deadeye'))        return 'projectile-attack';
+  if (ascend.includes('pathfinder'))     return 'flask-poison-attack';
+  // Warrior: Titan (slam armour), Warbringer (warcry stun), Smith of Kitava (weapon crafting tank)
+  if (ascend.includes('titan'))          return 'slam-armour-tank';
+  if (ascend.includes('warbringer'))     return 'warcry-stun-tank';
+  if (ascend.includes('smith'))          return 'weapon-tank';
+  // Mercenary: Witchhunter (crossbow chaos), Gemling Legionnaire (gem stacking), Tactician (party/grenade)
+  if (ascend.includes('witchhunter'))    return 'crossbow-chaos-attack';
+  if (ascend.includes('gemling'))        return 'gem-stack-attack';
+  if (ascend.includes('tactician'))      return 'party-grenade-attack';
+  // Monk: Invoker (elemental ele-bell), Acolyte of Chayula (chaos darkness)
+  if (ascend.includes('invoker'))        return 'elemental-monk-attack';
+  if (ascend.includes('acolyte'))        return 'chaos-monk-darkness';
+  // Druid: Oracle (spell/totem), Shaman (storm/totem)
+  if (ascend.includes('oracle'))         return 'spell-totem-druid';
+  if (ascend.includes('shaman'))         return 'storm-totem-druid';
+  // Huntress: Amazon (spear/javelin), Ritualist (spear/dot)
+  if (ascend.includes('amazon'))         return 'spear-attack';
+  if (ascend.includes('ritualist'))      return 'spear-dot-attack';
+  // PoE1 ascendancy fallthroughs (when POE2_MODE=false)
+  if (ascend.includes('necro'))          return 'minion';
+  if (ascend.includes('occultist') && hasES) return 'chaos-dot-es';
+  if (ascend.includes('assassin'))       return 'crit-attack';
+  if (ascend.includes('berserker') || ascend.includes('juggernaut')) return 'melee-tank';
+  if (ascend.includes('raider'))         return 'bow-attack';
+  if (ascend.includes('chieftain'))      return 'fire-attack';
+  if (ascend.includes('elementalist'))   return 'elemental-spell';
+
+  // Class fallback (no ascendancy yet)
+  if (cls === 'witch' || cls === 'sorceress') return 'spell';
+  if (cls === 'ranger' || cls === 'huntress') return 'projectile-attack';
+  if (cls === 'warrior') return 'melee-tank';
+  if (cls === 'mercenary') return 'attack';
+  if (cls === 'monk') return 'monk-attack';
+  if (cls === 'druid') return 'spell-totem-druid';
+
   if (hasES && !hasLife) return 'ci-es';
   if (isLowLife) return 'lowlife-es';
   if (defenseType) return `${defenseType}-based`;
 
-  return className.toLowerCase();
+  return cls;
 }
 
 /**
@@ -110,36 +146,36 @@ function analyzeItemSlot(
 
   // Weapon slots
   if (slot.includes('Weapon')) {
-    if (buildArchetype.includes('spell') && !itemName.includes('sceptre') && !itemName.includes('wand')) {
-      analysis.suggestions.push('Consider a weapon with spell damage or cast speed mods');
+    if (buildArchetype.includes('spell') && !itemName.includes('sceptre') && !itemName.includes('wand') && !itemName.includes('staff') && !itemName.includes('focus')) {
+      analysis.suggestions.push('Consider a spell-scaling weapon: Wand (cast speed/spell levels), Sceptre (extra damage as element), or Staff (high spell damage). Pair with a Focus or another Wand for double-spec.');
     }
     if (buildArchetype.includes('attack') && (itemName.includes('white') || rarity === 'normal')) {
       analysis.issues.push('Using a normal/white weapon significantly reduces damage');
       analysis.priority = 'high';
-      analysis.suggestions.push('Upgrade to a rare weapon with high physical DPS or elemental damage');
+      analysis.suggestions.push('Upgrade to a rare weapon — for PoE2: Crossbow (mercenary), Bow/Spear (ranger/huntress), Quarterstaff (monk), Two-Handed Mace/Axe (warrior). Look for tier-prefixed bases (Advanced/Expert).');
     }
-    if (buildArchetype.includes('crit') && !itemName.includes('foil') && !itemName.includes('dagger')) {
-      analysis.suggestions.push('Consider a high crit base like foils or daggers for crit builds');
+    if (buildArchetype.includes('crit') && !itemName.includes('staff') && !itemName.includes('wand') && !itemName.includes('crossbow')) {
+      analysis.suggestions.push('For PoE2 crit scaling, look for high base crit chance items and weapons with +# to Critical Hit Chance affixes; Wands, Crossbows, and Staves are common crit bases.');
     }
   }
 
-  // Body Armour
+  // Body Armour (PoE2 thresholds — life pools are lower than PoE1)
   if (slot === 'Body Armour') {
-    const lowLife = (stats.life || 0) < 3500;
-    const lowES = (stats.energyShield || 0) < 1000;
+    const lowLife = (stats.life || 0) < 1500;
+    const lowES = (stats.energyShield || 0) < 800;
 
     if (buildArchetype.includes('es') && lowES) {
       analysis.issues.push('Energy shield is low for an ES-based build');
       analysis.priority = 'high';
-      analysis.suggestions.push('Upgrade to a high ES body armour (500+ ES)');
+      analysis.suggestions.push('Upgrade to a high ES body armour. PoE2 endgame ES chests roll 400-800+ base ES; combine with %ES affixes and rune slots.');
     }
-    if (buildArchetype.includes('life') && lowLife) {
-      analysis.issues.push('Life is low - body armour should have life rolls');
+    if (!buildArchetype.includes('es') && lowLife) {
+      analysis.issues.push('Life is low for an endgame build');
       analysis.priority = 'high';
-      analysis.suggestions.push('Look for body armour with 80+ maximum life');
+      analysis.suggestions.push('Look for body armour with +# maximum life affixes (typically T1-T2 rolls: 80-120 life). Also consider Spirit affixes if you reserve.');
     }
     if (!buildArchetype.includes('unique') && rarity === 'unique') {
-      analysis.suggestions.push('Ensure unique body armour synergizes with your build');
+      analysis.suggestions.push('Verify the unique synergizes with your build — PoE2 uniques typically come with strong trade-offs.');
     }
   }
 
@@ -182,11 +218,14 @@ function analyzeItemSlot(
 
   // Belt
   if (slot === 'Belt') {
-    if (buildArchetype.includes('life') && (stats.life || 0) < 4000) {
-      analysis.suggestions.push('Consider a Stygian Vise or heavy life belt');
+    if ((stats.life || 0) < 1500 && !buildArchetype.includes('es')) {
+      analysis.suggestions.push('Belt is a major life slot in PoE2 — look for Utility Belt or Heavy Belt with +# maximum life prefix and +charm slots');
     }
-    if (buildArchetype.includes('flask')) {
-      analysis.suggestions.push('Look for flask duration/charge mods on belt');
+    if (buildArchetype.includes('flask') || buildArchetype.includes('poison')) {
+      analysis.suggestions.push('Look for +charm slots, charm effect duration, and charm charges affixes on belt');
+    }
+    if (buildArchetype.includes('spirit') || (stats as any).spirit > 100) {
+      analysis.suggestions.push('Belt can roll +# to Spirit — significant for reservation-heavy builds');
     }
   }
 
@@ -289,9 +328,9 @@ export function analyzeEquippedItems(
     'Belt',
     'Flask 1',
     'Flask 2',
-    'Flask 3',
-    'Flask 4',
-    'Flask 5',
+    'Charm 1',
+    'Charm 2',
+    'Charm 3',
   ];
 
   // Analyze each slot
@@ -320,11 +359,12 @@ export function analyzeEquippedItems(
   const life = buildStats.life || 0;
   const es = buildStats.energyShield || 0;
 
-  if (buildArchetype.includes('life') && life < 3500) {
-    generalSuggestions.push(`⚠️ Life pool is low (${life}) - aim for 4000+ for mapping, 5000+ for endgame`);
+  // PoE2 thresholds — Life pools cap around 1500-3000 for most builds, ES can carry the rest
+  if (!buildArchetype.includes('es') && life < 1500) {
+    generalSuggestions.push(`⚠️ Life pool is low (${life}) — aim for 1800+ for mapping, 2500+ for pinnacle bosses. Stack +max life affixes on every gear slot.`);
   }
-  if (buildArchetype.includes('es') && es < 3000) {
-    generalSuggestions.push(`⚠️ Energy Shield is low (${es}) - aim for 4000+ for CI builds`);
+  if (buildArchetype.includes('es') && es < 2500) {
+    generalSuggestions.push(`⚠️ Energy Shield is low (${es}) — aim for 4000+ for ES-stacking caster builds. Focus body armour, helmet, and %ES affixes.`);
   }
 
   // DPS check (very rough)

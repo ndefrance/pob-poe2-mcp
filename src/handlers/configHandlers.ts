@@ -280,11 +280,12 @@ function formatConfigOutput(config: any): string {
 
   let output = "=== Configuration State ===\n\n";
 
-  // Build settings
+  // Build settings (PoE2: bandits/pantheons removed; show whatever build keys come back)
   output += "=== Build Settings ===\n";
-  output += `Bandit: ${config.bandit || 'None'}\n`;
-  output += `Pantheon Major God: ${config.pantheonMajorGod || 'None'}\n`;
-  output += `Pantheon Minor God: ${config.pantheonMinorGod || 'None'}\n`;
+  // PoE1 keys preserved for backward compat — only printed if present
+  if (config.bandit) output += `Bandit: ${config.bandit}\n`;
+  if (config.pantheonMajorGod) output += `Pantheon Major: ${config.pantheonMajorGod}\n`;
+  if (config.pantheonMinorGod) output += `Pantheon Minor: ${config.pantheonMinorGod}\n`;
 
   // Enemy settings
   output += "\n=== Enemy Settings ===\n";

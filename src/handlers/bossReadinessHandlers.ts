@@ -15,65 +15,70 @@ interface BossThreshold {
   mechanics: string[];
 }
 
+// PoE2 pinnacle/notable encounters as of tree 0_4.
+// Life/DPS thresholds reflect PoE2's lower HP scaling (1500-3000 life is common endgame).
+// DPS thresholds reflect PoE2's longer fights and stricter damage windows.
 const BOSS_THRESHOLDS: Record<string, BossThreshold> = {
-  shaper: {
-    name: 'The Shaper',
-    minLife: 5000, minDPS: 1_000_000, minEHP: 30_000,
-    notes: ['75% elemental resists required', 'High cold damage — spell suppression/dodge helps'],
-    mechanics: ['Stand in rotating beam = instant death', 'Move out of Shaper Slam circle', 'Ice prison requires ES or granite flask'],
+  arbiter: {
+    name: 'The Arbiter of Ash',
+    minLife: 2000, minDPS: 400_000, minEHP: 12_000,
+    notes: ['Fire pinnacle — fire resist 75% mandatory, overcap to mitigate -res penalty', 'Stays in melee range; movement skills help reposition'],
+    mechanics: ['Fire ground patches persist — keep moving', 'Telegraphed slam — sidestep on windup', 'Adds spawn during phases — clear or ignore based on DPS budget'],
   },
-  elder: {
-    name: 'The Elder',
-    minLife: 5000, minDPS: 800_000, minEHP: 25_000,
-    notes: ['75% elemental + 0%+ chaos recommended', 'DoT phases require recovery layers'],
-    mechanics: ['Spiral of storms — keep moving', 'Tentacle Miscreations must be killed quickly'],
+  king_in_the_mists: {
+    name: 'The King in the Mists',
+    minLife: 2200, minDPS: 500_000, minEHP: 14_000,
+    notes: ['Cold + chaos damage — cap both resists; chaos at 75% strongly recommended in PoE2', 'Slowing mists drain mobility — invest in some skill speed'],
+    mechanics: ['Mist circles — stand in safe zones marked by absent fog', 'Phase transitions reset positioning', 'Spectral adds chase the player'],
   },
-  sirus: {
-    name: 'Sirus, Awakener of Worlds',
-    minLife: 5500, minDPS: 2_000_000, minEHP: 35_000,
-    notes: ['Phase 4 meteors are one-shots without positioning', 'Chaos resistance strongly recommended (60%+ ideal)'],
-    mechanics: ['Die beams — walk between the lines', 'Maze phase — follow correct portals', 'Corridor phase — avoid tunnel walls'],
+  trialmaster: {
+    name: 'The Trialmaster (Trial of Chaos)',
+    minLife: 2000, minDPS: 350_000, minEHP: 11_000,
+    notes: ['Damage type rotates per trial — bring balanced resistances, not just one element', 'Multi-round encounter — sustain matters more than burst'],
+    mechanics: ['Trial modifiers stack across rounds — read each one', 'Multiple damage types in sequence — flask up before each round', 'Honour drains on hit — minimise damage taken'],
   },
-  maven: {
-    name: 'The Maven',
-    minLife: 6000, minDPS: 3_000_000, minEHP: 40_000,
-    notes: ['Memory game insta-kills on failure', 'Very high damage output in final phases'],
-    mechanics: ['Memory game — memorise the sequence and repeat it', 'Avoid brain phases', 'Maven orbs — stay mobile'],
+  xesht: {
+    name: 'Xesht, We That Are One',
+    minLife: 2200, minDPS: 600_000, minEHP: 14_000,
+    notes: ['Chaos pinnacle — chaos res to 75% is mandatory, not optional', 'Phys-chaos hybrid hits punish low chaos res builds hard'],
+    mechanics: ['Multiple eye/tentacle adds — prioritize correct ones per phase', 'Reality-warp visuals can mask telegraphs — listen for audio cues', 'Phase transition tentacle dive — get away from the centre'],
   },
-  uber_elder: {
-    name: 'Uber Elder',
-    minLife: 6000, minDPS: 1_500_000, minEHP: 40_000,
-    notes: ['Dual-boss encounter — constant movement required', 'Cold snap ground persists and covers the arena'],
-    mechanics: ['Avoid Elder circle and Shaper beams simultaneously', 'High DPS window when Shaper kneels'],
+  olroth: {
+    name: 'Olroth, Originator of the Tale',
+    minLife: 2200, minDPS: 550_000, minEHP: 13_000,
+    notes: ['Cold-heavy with phys overlap — cold cap + good armour/PDR work well', 'Mid-fight phase shifts — bring multi-target capability'],
+    mechanics: ['Ice spike volleys — projectile evasion helps', 'Telegraphed slam circles', 'Summons skeletal/cold add waves'],
   },
-  eater: {
-    name: 'Eater of Worlds (Uber)',
-    minLife: 6000, minDPS: 4_000_000, minEHP: 50_000,
-    notes: ['Physical damage primary — armour/PDR very valuable', 'Tentacles apply stacking debuffs'],
-    mechanics: ['Move to remove tentacle stacks', 'Dodge projectile waves'],
-  },
-  exarch: {
-    name: 'Searing Exarch (Uber)',
-    minLife: 6000, minDPS: 4_000_000, minEHP: 50_000,
-    notes: ['Fire/cold damage — suppression + capped resists required', 'Phases escalate significantly'],
-    mechanics: ['Avoid meteor impact zones', 'Kill adds quickly during add phase'],
+  zarokh: {
+    name: 'Zarokh, the Temporal',
+    minLife: 2300, minDPS: 700_000, minEHP: 14_000,
+    notes: ['Lightning + temporal mechanics — lightning cap mandatory, slows hurt single-target windows', 'High damage burst phases'],
+    mechanics: ['Temporal slow zones — get out fast', 'Lightning storm patterns rotate around arena', 'Damage windows are short — burst with all combat buffs active'],
   },
   pinnacle: {
-    name: 'Generic Pinnacle Boss',
-    minLife: 6000, minDPS: 3_000_000, minEHP: 40_000,
-    notes: ['General endgame readiness check'],
-    mechanics: ['Capped resistances essential', 'Flask immunities (bleed, freeze, poison) required'],
+    name: 'Generic PoE2 Pinnacle',
+    minLife: 2000, minDPS: 500_000, minEHP: 12_000,
+    notes: ['Generic endgame readiness check', 'PoE2: chaos res caps at 75% like other elements — aim to cap if possible'],
+    mechanics: ['All elemental resists at 75% mandatory', 'Charm + Flask uptime matters in PoE2', 'Ailment threshold (life pool) determines freeze/stun resistance'],
   },
 };
 
 const BOSS_ALIASES: Record<string, string> = {
-  'uber shaper': 'shaper',
-  'uber maven': 'maven',
-  'awakener': 'sirus',
-  'searing exarch': 'exarch',
-  'eater of worlds': 'eater',
+  'the arbiter': 'arbiter',
+  'arbiter of ash': 'arbiter',
+  'king': 'king_in_the_mists',
+  'mists': 'king_in_the_mists',
+  'king of the mists': 'king_in_the_mists',
+  'trial of chaos': 'trialmaster',
+  'chaos trial': 'trialmaster',
+  'xesht': 'xesht',
+  'we that are one': 'xesht',
+  'olroth': 'olroth',
+  'zarokh': 'zarokh',
+  'temporal': 'zarokh',
   'endgame': 'pinnacle',
   'generic': 'pinnacle',
+  'pinnacle': 'pinnacle',
 };
 
 export async function handleCheckBossReadiness(context: BossReadinessContext, boss: string) {
@@ -87,10 +92,11 @@ export async function handleCheckBossReadiness(context: BossReadinessContext, bo
 
   const stats = await luaClient.getStats([
     'Life', 'TotalEHP', 'EnergyShield',
-    'TotalDPS', 'CombinedDPS', 'MinionTotalDPS',
+    'TotalDPS', 'CombinedDPS', 'FullDPS', 'MinionTotalDPS',
     'FireResist', 'ColdResist', 'LightningResist', 'ChaosResist',
-    'EffectiveSpellSuppressionChance', 'SpellSuppressionChance',
-    'Armour', 'PhysicalDamageReduction', 'EvasionChance',
+    'EffectiveSpellSuppressionChance',
+    'Armour', 'PhysicalDamageReduction',
+    'Spirit',
   ]);
 
   const life = Number(stats.Life ?? 0);
@@ -134,8 +140,9 @@ export async function handleCheckBossReadiness(context: BossReadinessContext, bo
     {
       label: 'Chaos Resist',
       value: `${chaosRes}%`,
-      pass: chaosRes >= 0,
-      critical: chaosRes < -30,
+      // PoE2: chaos resist caps at 75% same as elemental, so use 75 as target
+      pass: chaosRes >= 75,
+      critical: chaosRes < 30,
     },
   ];
 
@@ -156,7 +163,8 @@ export async function handleCheckBossReadiness(context: BossReadinessContext, bo
       c.label === 'Life'         ? ` (need ${threshold.minLife.toLocaleString()}+)` :
       c.label === 'Effective HP' ? ` (need ${threshold.minEHP.toLocaleString()}+)` :
       c.label === 'DPS'          ? ` (need ~${threshold.minDPS.toLocaleString()}+)` :
-      c.label !== 'Chaos Resist' ? ' (need 75%)' : ' (need 0%+)';
+      c.label === 'Chaos Resist' ? ' (need 75% in PoE2)' :
+                                    ' (need 75%)';
     output += `  ${icon} ${c.label}: ${c.value}${req}\n`;
   }
 

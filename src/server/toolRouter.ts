@@ -17,7 +17,7 @@ import { handleListBuilds, handleAnalyzeBuild, handleCompareBuilds, handleGetBui
 import { handleStartWatching, handleStopWatching, handleGetRecentChanges, handleWatchStatus, handleRefreshTreeData } from "../handlers/watchHandlers.js";
 import { handleCompareTrees, handleGetNearbyNodes, handleFindPath, handleGetPassiveUpgrades, handleSuggestMasteries } from "../handlers/treeHandlers.js";
 import { handleGetBuildIssues, formatIssuesResponse } from "../handlers/buildGoalsHandlers.js";
-import { handleLuaStart, handleLuaStop, handleLuaNewBuild, handleLuaSaveBuild, handleLuaLoadBuild, handleLuaGetStats, handleLuaGetTree, handleLuaSetTree, handleSearchTreeNodes, handleLuaGetBuildInfo, handleLuaReloadBuild, handleUpdateTreeDelta, handleCreateSpec, handleListSpecs, handleSelectSpec, handleDeleteSpec, handleRenameSpec, handleListItemSets, handleSelectItemSet } from "../handlers/luaHandlers.js";
+import { handleLuaStart, handleLuaStop, handleLuaNewBuild, handleLuaSaveBuild, handleLuaLoadBuild, handleLuaGetStats, handleLuaGetTree, handleLuaSetTree, handleSearchTreeNodes, handleLuaGetBuildInfo, handleLuaReloadBuild, handleUpdateTreeDelta, handleCreateSpec, handleListSpecs, handleSelectSpec, handleDeleteSpec, handleRenameSpec, handleListItemSets, handleSelectItemSet, handleLuaGetDpsBreakdown, handleLuaSimulateChange, handleLuaSetFullCombatState } from "../handlers/luaHandlers.js";
 import { handleAddItem, handleGetEquippedItems, handleToggleFlask, handleGetSkillSetup, handleSetMainSkill, handleCreateSocketGroup, handleAddGem, handleSetGemLevel, handleSetGemQuality, handleRemoveSkill, handleRemoveGem, handleSetupSkillWithGems, handleAddMultipleItems, handleSetSocketGroupEnabled, handleSetGemEnabled } from "../handlers/itemSkillHandlers.js";
 import { handleAnalyzeDefenses, handleSuggestOptimalNodes, handleOptimizeTree } from "../handlers/optimizationHandlers.js";
 import { handleAnalyzeItems, handleOptimizeSkillLinks, handleCreateBudgetBuild } from "../handlers/advancedOptimizationHandlers.js";
@@ -27,9 +27,11 @@ import { handleExportBuild, handleSaveTree, handleSnapshotBuild, handleListSnaps
 import { handleAnalyzeSkillLinks, handleSuggestSupportGems, handleCompareGemSetups, handleValidateGemQuality, handleFindOptimalLinks, handleGemUpgradePath } from "../handlers/skillGemHandlers.js";
 import { handleSearchTradeItems, handleGetItemPrice, handleGetLeagues, handleSearchStats, handleFindItemUpgrades, handleFindResistanceGear, handleCompareTradeItems } from "../handlers/tradeHandlers.js";
 import { handleGetCurrencyRates, handleFindArbitrage, handleCalculateTradingProfit } from "../handlers/poeNinjaHandlers.js";
+import { handleFetchPoeNinjaCharacter } from "../handlers/poeNinjaBuildsHandlers.js";
+import type { PoeNinjaBuildsClient } from "../services/poeNinjaBuildsClient.js";
 import { handleSearchClusterJewels, handleAnalyzeClusterJewels, handleAnalyzeBuildClusterJewels } from "../handlers/clusterJewelHandlers.js";
 import { handleGenerateShoppingList } from "../handlers/shoppingListHandlers.js";
-import { handlePlanLeveling } from "../handlers/levelingHandlers.js";
+import { handlePlanLeveling, handleGetGemBreakpoints } from "../handlers/levelingHandlers.js";
 import { handleCheckBossReadiness } from "../handlers/bossReadinessHandlers.js";
 import { handleSuggestWatchersEye } from "../handlers/jewelAdvisorHandlers.js";
 import { handleSuggestCrafting } from "../handlers/craftingAdvisorHandler.js";
@@ -42,6 +44,7 @@ export interface ToolRouterDependencies {
   statMapper: StatMapper | null;
   recommendationEngine: ItemRecommendationEngine | null;
   ninjaClient: PoeNinjaClient;
+  buildsClient?: PoeNinjaBuildsClient;
   getLuaClient: () => import("../pobLuaBridge.js").PoBLuaApiClient | null;
   ensureLuaClient: () => Promise<void>;
 }
@@ -177,6 +180,21 @@ export async function routeToolCall(
 
     case "lua_get_stats":
       return await handleLuaGetStats(luaContext, args?.category as string | undefined);
+
+    case "lua_get_dps_breakdown":
+      return await handleLuaGetDpsBreakdown(luaContext);
+
+    case "lua_simulate_change":
+      return await handleLuaSimulateChange(luaContext, {
+        add_nodes: args?.add_nodes as number[] | undefined,
+        remove_nodes: args?.remove_nodes as number[] | undefined,
+        use_full_dps: args?.use_full_dps as boolean | undefined,
+      });
+
+    case "lua_set_full_combat_state":
+      return await handleLuaSetFullCombatState(luaContext, {
+        enable: args?.enable as boolean | undefined,
+      });
 
     case "lua_get_tree":
       return await handleLuaGetTree(luaContext, args?.include_node_ids as boolean | undefined);
@@ -514,6 +532,17 @@ export async function routeToolCall(
       return await handleSearchTradeItems(tradeContext, args as any);
     }
 
+    case "fetch_poe_ninja_character": {
+      if (!deps.buildsClient) {
+        throw new Error("poe.ninja builds client is not initialized");
+      }
+      if (!args) throw new Error("Missing arguments for fetch_poe_ninja_character");
+      return await handleFetchPoeNinjaCharacter(
+        { buildsClient: deps.buildsClient },
+        args as any
+      );
+    }
+
     case "get_item_price": {
       if (!deps.tradeClient) {
         throw new Error("Trade API is not enabled. Set POE_TRADE_ENABLED=true to enable.");
@@ -707,6 +736,13 @@ export async function routeToolCall(
       return await handlePlanLeveling(
         { getLuaClient: deps.getLuaClient, ensureLuaClient: deps.ensureLuaClient },
         args || {}
+      );
+
+    case "get_gem_breakpoints":
+      if (!args?.gem_name) throw new Error("Missing gem_name");
+      return await handleGetGemBreakpoints(
+        { getLuaClient: deps.getLuaClient, ensureLuaClient: deps.ensureLuaClient },
+        { gem_name: args.gem_name as string }
       );
 
     case "suggest_masteries":

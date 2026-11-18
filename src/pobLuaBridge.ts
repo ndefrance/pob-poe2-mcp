@@ -356,6 +356,40 @@ async setTree(params: {
     if (!res.ok) throw new Error(res.error || "set_level failed");
   }
 
+  async getDpsBreakdown(): Promise<any> {
+    const res = await this.send({ action: "get_dps_breakdown" });
+    if (!res.ok) throw new Error(res.error || "get_dps_breakdown failed");
+    return res.breakdown;
+  }
+
+  async simulateChange(params: {
+    addNodes?: number[];
+    removeNodes?: number[];
+    useFullDPS?: boolean;
+  }): Promise<any> {
+    const res = await this.send({ action: "simulate_change", params: params || {} });
+    if (!res.ok) throw new Error(res.error || "simulate_change failed");
+    return res.diff;
+  }
+
+  async setFullCombatState(enable: boolean): Promise<any> {
+    const res = await this.send({ action: "set_full_combat_state", params: { enable } });
+    if (!res.ok) throw new Error(res.error || "set_full_combat_state failed");
+    return res.applied;
+  }
+
+  async findPath(targetNodeId: number): Promise<any> {
+    const res = await this.send({ action: "find_path", params: { targetNodeId } });
+    if (!res.ok) throw new Error(res.error || "find_path failed");
+    return res.result;
+  }
+
+  async getGemBreakpoints(params: { gemName: string }): Promise<any> {
+    const res = await this.send({ action: "get_gem_breakpoints", params });
+    if (!res.ok) throw new Error(res.error || "get_gem_breakpoints failed");
+    return res.gem;
+  }
+
   async getConfig(): Promise<any> {
     const res = await this.send({ action: "get_config" });
     if (!res.ok) throw new Error(res.error || "get_config failed");

@@ -354,15 +354,15 @@ export async function handleCreateBudgetBuild(
       `Main Skill (${budget_level === 'high' ? '6' : budget_level === 'medium' ? '5' : '4'}-link):`,
       `  1. ${main_skill}`,
       '  2. [Damage Support - e.g., Added Fire, Elemental Damage with Attacks]',
-      '  3. [Multiplier Support - e.g., Multistrike, Spell Echo]',
-      '  4. [Utility Support - e.g., Faster Attacks, Inspiration]'
+      '  3. [Multiplier Support — PoE2 0.5: Heft, Brutality, Concentrated Area, Magnified Area, Premeditation, Hourglass, Primal Strikes]',
+      '  4. [Utility Support — e.g. Persistent Ground, Chain, Fork, Pierce]'
     );
 
     if (budget_level !== 'low') {
-      outputLines.push('  5. [Penetration or More Damage - e.g., Fire Penetration, Elemental Focus]');
+      outputLines.push('  5. [Penetration or More Damage — PoE2 0.5: Fire/Cold/Lightning Penetration, Concentrated Area, Magnified Area]');
     }
     if (budget_level === 'high') {
-      outputLines.push('  6. [Advanced Support - e.g., Exceptional gems, Empower]');
+      outputLines.push('  6. [Advanced Support — push level 20 + 20% quality on main DPS gem and supports]');
     }
     outputLines.push('');
 

@@ -367,6 +367,50 @@ export function getLuaToolSchemas(): any[] {
       },
     },
     {
+      name: "lua_get_dps_breakdown",
+      description: "Detailed damage decomposition for the loaded build: average hit, damage by type (phys/fire/cold/lightning/chaos), crit chance + multi + per-type crit averages, hit chance & accuracy, attack/cast speed, mana/life/ES costs, penetration values, active charges (frenzy/power/endurance/blood/etc), and enemy config. Use this instead of lua_get_stats when you need to answer 'where is my DPS coming from' or 'what multipliers are active'.",
+      inputSchema: {
+        type: "object",
+        properties: {},
+      },
+    },
+    {
+      name: "lua_set_full_combat_state",
+      description: "Flip the build's calculation into a 'fully active in combat' state: activates all flasks, sets all charge usage flags, enables common combat-only buff toggles (Onslaught, Innervate, Fortify) and combat conditions (InCombat, KilledRecently, CritRecently, etc.), and sets buff mode to EFFECTIVE. This closes the gap between the headless calc default (passive, no flasks, no charges) and the FullDPS values PoB2 GUI shows (which assume everything active). Pass enable=false to reset to passive state. Use this BEFORE lua_get_dps_breakdown or lua_get_stats when you want GUI-equivalent numbers.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          enable: {
+            type: "boolean",
+            description: "true (default) to enter full-combat calc state, false to reset to passive.",
+          },
+        },
+      },
+    },
+    {
+      name: "lua_simulate_change",
+      description: "What-if calculation: pass add_nodes and/or remove_nodes (passive tree node IDs) and get back the DPS / Life / EHP / resist deltas without persisting any change. Use this to answer 'what would I gain if I took these nodes?' without actually modifying the build. Use lua_get_tree first to see current allocation, then pass candidate node IDs from search_tree_nodes / get_nearby_nodes.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          add_nodes: {
+            type: "array",
+            items: { type: "number" },
+            description: "Node IDs to hypothetically allocate.",
+          },
+          remove_nodes: {
+            type: "array",
+            items: { type: "number" },
+            description: "Node IDs to hypothetically deallocate.",
+          },
+          use_full_dps: {
+            type: "boolean",
+            description: "Use FullDPS (sum of all flagged groups) instead of TotalDPS (active skill only).",
+          },
+        },
+      },
+    },
+    {
       name: "lua_get_tree",
       description: "Get passive tree allocation from currently loaded build",
       inputSchema: {
@@ -565,7 +609,7 @@ export function getLuaToolSchemas(): any[] {
     },
     {
       name: "add_gem",
-      description: "Add a gem to a socket group. IMPORTANT: Use the gem's base name WITHOUT 'Support' suffix — e.g. 'Brutality' not 'Brutality Support', 'Concentrated Effect' not 'Concentrated Effect Support', 'Melee Physical Damage' not 'Melee Physical Damage Support'. The server will auto-resolve names but correct names ensure proper matching.",
+      description: "Add a gem to a socket group. Use the PoE2 0.5 gem base name (no 'Support' suffix). Tiered supports (e.g. 'Brutality', 'Chain', 'Pierce') auto-resolve to the highest tier (III → II → I fallback). Examples of verified-present 0.5 names: 'Heft', 'Brutality', 'Concentrated Area', 'Magnified Area', 'Chain', 'Fork', 'Pierce', 'Premeditation', 'Persistent Ground', 'Primal Strikes', 'Ice-Tipped Arrows', 'Whirling Slash', 'Twister'.",
       inputSchema: {
         type: "object",
         properties: {
@@ -575,7 +619,7 @@ export function getLuaToolSchemas(): any[] {
           },
           gem_name: {
             type: "string",
-            description: "Gem name WITHOUT 'Support' suffix (e.g. 'Brutality', 'Concentrated Effect', 'Multistrike')",
+            description: "PoE2 0.5 gem name (no 'Support' suffix). Verified-present examples: 'Heft', 'Brutality', 'Concentrated Area', 'Magnified Area', 'Premeditation', 'Persistent Ground', 'Primal Strikes', 'Ice-Tipped Arrows', 'Chain', 'Fork', 'Pierce', 'Whirling Slash', 'Twister'.",
           },
           level: {
             type: "number",
@@ -773,15 +817,26 @@ export function getLuaToolSchemas(): any[] {
     },
     {
       name: "plan_leveling",
-      description: "Generate an act-by-act leveling progression guide for a build, including skill gem progression, lab timing, and passive tree priority order",
+      description: "Generate a PoE2 leveling progression guide structured around PoE2's 3-act + Cruel campaign. Includes per-act target levels, real PoE2 boss roster (Geonor / Jamanra / King in the Mists / etc.), Trial of Sekhema + Trial of Chaos ascendancy unlock points, gem-level breakpoints tied to Lesser/Greater/Perfect Uncut Skill Gem tiers, support gem tier progression (I/II/III), per-class starter skill chains, and PoE2 resistance penalty markers (Cruel -20%, end-of-Cruel -40%). Reads class + main skill from the currently-loaded build via Lua bridge when available.",
       inputSchema: {
         type: "object",
         properties: {
-          build_name: { type: "string", description: "Build file to read class/skill from (optional if build loaded in Lua bridge)" },
-          class_name: { type: "string", description: "Override class name (e.g. 'Witch', 'Ranger')" },
-          main_skill: { type: "string", description: "Override main skill name" },
-          ascendancy: { type: "string", description: "Override ascendancy name" },
+          build_name: { type: "string", description: "Build file to read class/skill from (optional if a build is loaded via lua_load_build)" },
+          class_name: { type: "string", description: "Override class. PoE2 classes: 'Ranger', 'Witch', 'Sorceress', 'Warrior', 'Mercenary', 'Monk', 'Druid', 'Huntress'" },
+          main_skill: { type: "string", description: "Override endgame target skill (e.g. 'Tornado Shot', 'Spark', 'Earthquake')" },
+          ascendancy: { type: "string", description: "Override ascendancy (e.g. 'Deadeye', 'Stormweaver', 'Titan')" },
         },
+      },
+    },
+    {
+      name: "get_gem_breakpoints",
+      description: "For a specific PoE2 gem, return its per-level data: required character level, mana cost, and stat curve at each gem level (1-20). Identifies the Lesser/Greater/Perfect Uncut Skill Gem tier crossovers (lvl 10, 15, 20). Reads live from PoB2's gem catalog so it reflects the current PoE2 patch.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          gem_name: { type: "string", description: "PoE2 gem name (e.g. 'Tornado Shot', 'Heft', 'Concentrated Area'). Tiered supports auto-resolve to the highest tier." },
+        },
+        required: ["gem_name"],
       },
     },
     {
@@ -831,7 +886,7 @@ export function getOptimizationToolSchemas(): any[] {
     },
     {
       name: "suggest_optimal_nodes",
-      description: "AI-powered suggestion of optimal passive nodes based on build goals",
+      description: "Suggest passive tree nodes that match a goal. Detects archetype from your equipped skill gems and weights suggestions accordingly. Goal options: 'damage', 'dps', 'defense', 'life', 'es', 'resist', 'speed', 'crit' (PoE2 crit scaling), 'spirit' (reservation pool), 'totem', 'minion', 'projectile', 'ailment' (DoT/poison/ignite/shock), 'mana'. Or pass any keyword (e.g. 'projectile speed', 'spell crit chance') for free-text search.",
       inputSchema: {
         type: "object",
         properties: {
@@ -841,7 +896,7 @@ export function getOptimizationToolSchemas(): any[] {
           },
           goal: {
             type: "string",
-            description: "Optimization goal: 'damage', 'defense', 'life', 'es', or stat name",
+            description: "Optimization goal — see description for full list",
           },
           points_available: {
             type: "number",
@@ -907,7 +962,7 @@ export function getOptimizationToolSchemas(): any[] {
     },
     {
       name: "create_budget_build",
-      description: "Create a league-start/budget-friendly version of a build",
+      description: "Create a budget-tier variant of a build. NOTE for PoE2: the recommendation engine was authored for PoE1 archetypes/items — outputs may reference PoE1-specific gear or skills. Use as a rough starting point; verify all suggested gear/gems exist in PoE2 before committing currency.",
       inputSchema: {
         type: "object",
         properties: {
@@ -941,7 +996,7 @@ export function getConfigToolSchemas(): any[] {
     },
     {
       name: "set_config",
-      description: "Modify configuration inputs. Common keys — Charges: usePowerCharges, useFrenzyCharges, useEnduranceCharges | Conditions: conditionFortify, conditionLeeching, conditionOnFullLife, conditionOnFullEnergyShield | Buffs: buffOnslaught | Enemy: enemyIsBoss ('Shaper'/'Pinnacle'/false), enemyLevel | Build: bandit ('None'/'Oak'/'Alira'/'Kraityn'), pantheonMajorGod, pantheonMinorGod. Call get_config to see all current values.",
+      description: "Modify configuration inputs. Common PoE2 keys — Charges: usePowerCharges, useFrenzyCharges, useEnduranceCharges | Conditions: conditionFullLife, conditionLowLife, conditionFortify | Enemy: enemyIsBoss, enemyLevel, enemyPhysicalReduction, enemyArmour, enemyEvasion. Call get_config first to see which keys exist on the loaded build (PoE2 omits PoE1's bandits/pantheons).",
       inputSchema: {
         type: "object",
         properties: {
@@ -958,7 +1013,7 @@ export function getConfigToolSchemas(): any[] {
     },
     {
       name: "set_enemy_stats",
-      description: "Configure enemy parameters for DPS calculations. Test against different enemy types (map boss, Shaper, Maven). Requires Lua bridge.",
+      description: "Configure enemy parameters for DPS calculations. Test against different PoE2 encounter difficulty: map boss, pinnacle (Arbiter of Ash / King in the Mists / Xesht / Zarokh). Requires Lua bridge.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1060,7 +1115,7 @@ export function getSkillGemToolSchemas(): any[] {
   return [
     {
       name: "analyze_skill_links",
-      description: "Analyze skill gem setup and evaluate support gem choices. Detects build archetype, rates each support gem, and identifies issues with current setup.",
+      description: "Analyze each socket group's skill + support gem setup. NOTE for PoE2: PoE2 supports work via the support panel (each support usable once per build) rather than PoE1's per-item link slots. This tool reports the gem composition per group and flags obvious missing-support patterns, but the underlying optimizer was authored for PoE1's 4/5/6L model — treat 'optimal link' suggestions as advisory, not authoritative.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1078,7 +1133,7 @@ export function getSkillGemToolSchemas(): any[] {
     },
     {
       name: "suggest_support_gems",
-      description: "Get intelligent support gem recommendations based on build archetype. Provides ranked suggestions with DPS estimates, cost, and reasoning.",
+      description: "Recommend support gems for the build. NOTE for PoE2: support gem pool and rules differ from PoE1 — each support can only be used once per build across all skills, supports are managed in a dedicated panel, and damage scaling is per-support not per-link. Recommendations here are based on a PoE1-authored algorithm — use as a starting point and verify support availability + uniqueness against your current support-panel state.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1359,7 +1414,7 @@ export function getTradeToolSchemas(): any[] {
         properties: {
           league: {
             type: "string",
-            description: "EXACT league name as specified by user (e.g., 'Standard', 'Settlers', 'Keepers', 'Hardcore'). Use get_leagues to see available leagues. Do not substitute or change the league name.",
+            description: "EXACT PoE2 league name as specified by user (e.g., 'Standard', 'Hardcore', or the current temp league name from get_leagues). Do not substitute or change the league name.",
           },
           item_name: {
             type: "string",
@@ -1410,12 +1465,59 @@ export function getTradeToolSchemas(): any[] {
             },
             description: "List of stat filters with min/max values",
           },
+          online_only: {
+            type: "boolean",
+            description: "When true (default), only return listings from currently-online sellers. Set false to include offline sellers (results may not be reachable for whisper).",
+          },
+          buyout_only: {
+            type: "boolean",
+            description: "When true, only return listings with a fixed buyout price (skips 'negotiable'/unpriced listings). Default false.",
+          },
+          trade_mode: {
+            type: "string",
+            description: "PoE2 0.5 trade availability. 'instant' = Instant Buyout ONLY (Ange NPC, no whisper required — fastest, most reliable). 'instant_or_inperson' = Instant Buyout + in-person whisper. 'inperson_online' / 'inperson_onlineleague' = whisper-only sellers online (anywhere / in this league). 'any' = all listings. When omitted, falls back to online_only behavior (default onlineleague).",
+            enum: ["instant", "instant_or_inperson", "inperson_online", "inperson_onlineleague", "any"],
+          },
+          sort: {
+            type: "string",
+            description: "Sort order for results. Options: 'price_asc' (cheapest first, default), 'price_desc' (most expensive first).",
+            enum: ["price_asc", "price_desc"],
+          },
           limit: {
             type: "number",
             description: "Maximum results (default: 5, max: 10)",
           },
         },
         required: ["league"],
+      },
+    },
+    {
+      name: "fetch_poe_ninja_character",
+      description: "Fetch a single character's complete build from poe.ninja PoE2 (gear, gems, jewels, tree, defensive stats, optional PoB import code). Accepts either a poe.ninja character URL or explicit (league, account, character) inputs. Use this as the first step when the user says 'use this build as a reference' or 'compare me against character X'. The data returned is the most reliable source for what an actual high-DPS player is using right now.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "Full poe.ninja PoE2 character URL, e.g. https://poe.ninja/poe2/builds/runesofaldur/character/NoVaKung-2864/CharName. If provided, overrides league/account/character.",
+          },
+          league: {
+            type: "string",
+            description: "League slug, e.g. 'runesofaldur'. Required if url is omitted.",
+          },
+          account: {
+            type: "string",
+            description: "Account name (account#1234 style). Required if url is omitted.",
+          },
+          character: {
+            type: "string",
+            description: "Character name. Required if url is omitted.",
+          },
+          include_pob_code: {
+            type: "boolean",
+            description: "When true, also fetches the base64 PoB import code so the user can load the build directly into Path of Building 2. Default false (saves one API call).",
+          },
+        },
       },
     },
     {
@@ -1498,8 +1600,28 @@ export function getTradeToolSchemas(): any[] {
       },
     },
     {
+      name: "find_resistance_gear",
+      description: "Search the trade site for affordable gear pieces that cover specific resistance gaps. Takes per-resistance needs (e.g. 'I need +40 fire and +25 cold to cap') and a budget; returns slot-by-slot recommendations with prices. REQUIRES: POE_TRADE_ENABLED=true.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          league: { type: "string", description: "EXACT PoE2 league name (e.g. 'Standard', 'Hardcore')." },
+          fire_resist_needed: { type: "number", description: "Percent of fire resistance still needed to cap." },
+          cold_resist_needed: { type: "number", description: "Percent of cold resistance still needed to cap." },
+          lightning_resist_needed: { type: "number", description: "Percent of lightning resistance still needed to cap." },
+          chaos_resist_needed: { type: "number", description: "Percent of chaos resistance still needed to cap (PoE2 chaos res caps at 75 like other resists)." },
+          max_price_per_item: { type: "number", description: "Cap on individual item price in the specified currency (default 50)." },
+          total_budget: { type: "number", description: "Total budget across all slots (default 200)." },
+          currency: { type: "string", description: "Currency for budget — typically 'chaos' or 'exalted' in PoE2 (default 'chaos')." },
+          slots: { type: "array", items: { type: "string" }, description: "Restrict search to specific slots (e.g. ['Ring 1','Amulet','Belt']). Default: all jewelry/armour slots." },
+          limit: { type: "number", description: "Max recommendations per slot (default 8)." },
+        },
+        required: ["league"],
+      },
+    },
+    {
       name: "search_cluster_jewels",
-      description: "Search for cluster jewels with specific enchants and notables. REQUIRES: POE_TRADE_ENABLED environment variable set to true.",
+      description: "Search for cluster jewels on the trade site. PoE2 has cluster jewels (see PoB2 Data/ClusterJewels.lua) but the notable pool and base types differ from PoE1 — verify the notable names you query against the in-game catalog. REQUIRES: POE_TRADE_ENABLED=true.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1596,7 +1718,7 @@ export function getBuildGoalsToolSchemas(): any[] {
     },
     {
       name: "analyze_build_cluster_jewels",
-      description: "Analyze the cluster jewels currently equipped in the build, evaluate which notables synergize with the build archetype, and flag wasted notables",
+      description: "Analyze cluster jewels currently equipped, evaluate notable synergy with the build archetype, and flag wasted notables. NOTE: PoE2 has cluster jewels but the notable→archetype mapping table here was built for PoE1 — the structural analysis (which slot, what passive count) works; specific notable recommendations may reference PoE1 nodes. Cross-check against your in-game cluster catalog.",
       inputSchema: {
         type: "object",
         properties: {},
@@ -1612,7 +1734,7 @@ export function getBuildGoalsToolSchemas(): any[] {
     },
     {
       name: "check_boss_readiness",
-      description: "Check if the loaded build meets the recommended thresholds for a specific endgame boss (Shaper, Elder, Sirus, Maven, Uber Elder, Eater of Worlds, Searing Exarch)",
+      description: "Check if the loaded build meets recommended thresholds for a PoE2 pinnacle encounter. Supported targets: 'arbiter' (Arbiter of Ash, fire pinnacle), 'king_in_the_mists' (cold/chaos pinnacle), 'xesht' (chaos pinnacle), 'olroth' (cold pinnacle), 'zarokh' (lightning/temporal pinnacle), 'trialmaster' (Trial of Chaos), or 'pinnacle' for a generic endgame readiness check.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1677,7 +1799,7 @@ export function getPoeNinjaToolSchemas(): any[] {
         properties: {
           league: {
             type: "string",
-            description: "EXACT league name as specified by user (e.g., 'Standard', 'Settlers', 'Keepers', 'Hardcore'). Do not substitute or change this value.",
+            description: "EXACT PoE2 league name as specified by user (e.g., 'Standard', 'Hardcore', or current temp league from get_leagues). Do not substitute or change this value.",
           },
         },
         required: ["league"],
@@ -1691,7 +1813,7 @@ export function getPoeNinjaToolSchemas(): any[] {
         properties: {
           league: {
             type: "string",
-            description: "EXACT league name as specified by user (e.g., 'Standard', 'Settlers', 'Keepers', 'Hardcore'). Do not substitute or change this value.",
+            description: "EXACT PoE2 league name as specified by user (e.g., 'Standard', 'Hardcore', or current temp league from get_leagues). Do not substitute or change this value.",
           },
           min_profit_percent: {
             type: "number",
@@ -1709,7 +1831,7 @@ export function getPoeNinjaToolSchemas(): any[] {
         properties: {
           league: {
             type: "string",
-            description: "EXACT league name as specified by user (e.g., 'Standard', 'Settlers', 'Keepers', 'Hardcore'). Do not substitute or change this value.",
+            description: "EXACT PoE2 league name as specified by user (e.g., 'Standard', 'Hardcore', or current temp league from get_leagues). Do not substitute or change this value.",
           },
           currency_chain: {
             type: "array",

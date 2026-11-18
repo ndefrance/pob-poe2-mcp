@@ -226,20 +226,21 @@ export async function handleCompareGemSetups(
     '',
   ];
 
-  // Known "more" multiplier support gems
+  // PoE2 "more" multiplier supports — multiplicative damage scaling
   const MORE_MULTIPLIERS = new Set([
-    'Controlled Destruction', 'Elemental Focus', 'Concentrated Effect',
-    'Multistrike', 'Faster Attacks', 'Faster Casting', 'Spell Echo',
-    'Brutality', 'Void Manipulation', 'Swift Affliction', 'Efficacy',
-    'Empower', 'Intensify', 'Infused Channelling', 'Close Combat',
-    'Exceptional Controlled Destruction', 'Exceptional Elemental Focus',
-    'Exceptional Void Manipulation', 'Exceptional Brutality',
-    'Exceptional Swift Affliction', 'Exceptional Efficacy',
+    'Heft', 'Brutality', 'Concentrated Area', 'Heft',
+    'Magnified Area', 'Premeditation', 'Close Combat', 'Longshot',
+    'Ambush', 'Persistent Ground', 'Premeditation',
+    'Fire Penetration', 'Ice-Tipped Arrows', 'Lightning Penetration',
+    'Withering Touch', 'Primal Strikes', 'Minion Damage',
+    'Hourglass', 'Bonebreaker', 'Spell Cascade',
   ]);
+  // PoE2 penetration / exposure supports
   const PENETRATION_GEMS = new Set([
-    'Fire Penetration', 'Cold Penetration', 'Lightning Penetration',
-    'Combustion', 'Energy Leech', 'Ice Bite',
-    'Exceptional Fire Penetration', 'Exceptional Cold Penetration', 'Exceptional Lightning Penetration',
+    'Fire Penetration', 'Cold Penetration', 'Lightning Penetration', 'Elemental Penetration',
+    'Fire Exposure', 'Cold Exposure', 'Lightning Exposure',
+    'Conduction', 'Glaciation', 'Ignition',
+    'Ice Bite', 'Lightning Mastery',
   ]);
 
   for (let i = 0; i < args.setups.length; i++) {
@@ -509,36 +510,24 @@ export async function handleGemUpgradePath(
             action: `Bring to 20% quality (currently ${quality}%)`,
             priority: (20 - quality) * multiplier * (isSupport ? 0.6 : 0.9),
             costEstimate: `~${costChaos}c in Gemcutter's Prisms`,
-            reason: 'Quality bonuses stack with gem level — use Hillock crafting bench for +28% quality',
+            reason: 'Quality bonuses are flat multiplicative scaling — apply Gemcutter\'s Prisms to reach 20%',
           });
         }
       }
 
-      // 21/20 via corruption
-      if (level === 20 && quality === 20 && isMain) {
+      // PoE2: gems can reach level 20 via Uncut Skill Gem cutting + Gemcutter's Prism scaling.
+      // There is no PoE1-style Vaal Orb corruption to push past max level.
+      // The high-level recommendation is to ensure max level + max quality on main DPS gems.
+      if (level >= 18 && quality < 20 && isMain) {
         upgrades.push({
           gemName: name,
           groupLabel: group.label || `Group ${group.index}`,
           currentLevel: level,
           currentQuality: quality,
-          action: 'Corrupt for 21/20 (Vaal Orb on 20/20)',
-          priority: 15 * multiplier,
-          costEstimate: '25% chance of 21/20, 25% chance brick — buy pre-corrupted 21/20 for safety',
-          reason: 'Level 21 is a significant DPS increase for active gems; corruption is high-risk/reward',
-        });
-      }
-
-      // Exceptional version for supports
-      if (isSupport && isMain && level >= 18 && budgetTier === 'endgame') {
-        upgrades.push({
-          gemName: name,
-          groupLabel: group.label || `Group ${group.index}`,
-          currentLevel: level,
-          currentQuality: quality,
-          action: `Buy Exceptional ${name.replace(' Support', '')} Support`,
-          priority: 20,
-          costEstimate: 'Varies greatly — check poe.ninja prices',
-          reason: 'Exceptional supports have higher quality bonuses and occasionally better base effects',
+          action: `Push ${name} to level 20 + 20% quality`,
+          priority: 18 * multiplier,
+          costEstimate: 'Uncut Skill Gems for level, Gemcutter\'s Prisms for quality',
+          reason: 'PoE2 gems max at level 20 + 20% quality — every level/quality point is multiplicative',
         });
       }
     }

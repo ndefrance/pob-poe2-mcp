@@ -48,166 +48,140 @@ export interface SkillOptimizationResult {
 }
 
 /**
- * Common support gem recommendations by skill type
+ * Common PoE2 support gem recommendations by skill type.
+ * PoE2 supports work via the support panel — each support is unique across the build
+ * (can only be used on one active skill at a time). Damage scaling is per-support.
  */
+// PoE2 0.5 supports verified present in the upstream PoB2 fork (post v0.16.0 / 0.5 patch).
+// 0.5 consolidated the support catalog from ~547 entries down to ~283. Several 0.4-era
+// names were removed (Inspiration, Martial Tempo, Scattershot, Lightning/Fire/Cold Infusion)
+// or renamed (Persistence → Persistent Ground, Primal Armament → Primal Strikes).
+// Tiered supports (I/II/III) resolve via add_gem's tier-fallback to the highest tier.
 const SUPPORT_RECOMMENDATIONS: Record<string, string[]> = {
-  // Physical attack
   'physical-attack': [
-    'Brutality Support',
-    'Melee Physical Damage Support',
-    'Impale Support',
-    'Close Combat Support',
-    'Multistrike Support',
-    'Fortify Support',
+    'Heft',                  // verified +10% on Plant man Group 2 (still in 0.5)
+    'Brutality',             // tiered — auto-resolves to III
+    'Close Combat',          // more dmg to nearby
+    'Ambush',                // more dmg on first hits
+    'Bonebreaker',           // armour-break support
+    'Primal Strikes',        // 0.5 — replaces former "Primal Armament"
   ],
-
-  // Elemental attack
   'elemental-attack': [
-    'Elemental Damage with Attacks Support',
-    'Trinity Support',
-    'Inspiration Support',
-    'Elemental Focus Support',
-    'Penetration Support',
+    'Conduction',            // shock-enable support
+    'Glaciation',             // chill / cold exposure
+    'Ignition',              // ignite / fire exposure
+    'Cold Penetration',
+    'Fire Penetration',
+    'Lightning Penetration',
+    'Ice-Tipped Arrows',     // 0.5 — cold conversion for bow/spear projectiles (used in Twister builds)
   ],
-
-  // Spell (general)
   'spell': [
-    'Spell Echo Support',
-    'Controlled Destruction Support',
-    'Concentrated Effect Support',
-    'Elemental Focus Support',
-    'Exceptional Spell Cascade Support',
+    'Concentrated Area',     // verified +30.5% on Plant man — top spell DPS support
+    'Magnified Area',        // larger AoE (PoE2 calls it Area, not Effect)
+    'Spell Cascade',         // additional cast locations
+    'Spell Echo',            // repeat cast
+    'Hourglass',             // faster cast
   ],
-
-  // DOT (damage over time)
   'dot': [
-    'Efficacy Support',
-    'Swift Affliction Support',
-    'Deadly Ailments Support',
-    'Void Manipulation Support',
-    'Cruelty Support',
+    'Withering Touch',       // chaos amp (verified -25% on Plant man — watch for build conflicts)
+    'Persistent Ground',     // 0.5 — replaces former "Persistence"; longer ground-DoT duration
+    'Glaciation',
+    'Brutality',
   ],
-
-  // Minion
   'minion': [
-    'Minion Damage Support',
-    'Minion Life Support',
-    'Feeding Frenzy Support',
-    'Predator Support',
-    'Meat Shield Support',
+    // PoE2 minions scale through Spirit reservation + gem level primarily.
+    'Heft',
+    'Brutality',
+    'Premeditation',
   ],
-
-  // Projectile
   'projectile': [
-    'Greater Multiple Projectiles Support',
-    'Exceptional Fork Support',
-    'Chain Support',
-    'Pierce Support',
-    'Barrage Support',
+    'Fork',                  // verified in user builds
+    'Chain',                 // tiered I/II/III
+    'Pierce',                // tiered
+    'Longshot',              // more dmg at range
+    'Ambush',                // bonus first-hit damage
+    'Ice-Tipped Arrows',     // 0.5 cold-conversion projectile support
   ],
-
-  // Crit
   'crit': [
-    'Increased Critical Strikes Support',
-    'Increased Critical Damage Support',
-    'Precise Technique Support',
+    'Premeditation',         // verified — more crit chance
+    'Blazing Critical',      // crit-themed support
   ],
-
-  // Aura/Curse
   'aura': [
-    'Enlighten Support',
-    'Empower Support',
-    'Enhance Support',
+    'Heft',
+    'Concentrated Area',
   ],
 };
 
 /**
- * Support gems that provide multiplicative ("more") damage bonuses.
- * These are the primary way to scale DPS — far stronger per slot than "increased" supports.
- * An exceptional main skill should have at least 2–3 "more" multipliers in its 6-link.
+ * PoE2 support gems that provide multiplicative ("more") damage bonuses.
+ * These are the strongest DPS-per-slot supports — a well-built skill setup should
+ * have 2-3 of these in its support panel.
  */
 const MORE_MULTIPLIER_GEMS = new Set([
-  'controlled destruction support',
-  'elemental focus support',
-  'multistrike support',
-  'spell echo support',
-  'swift affliction support',
-  'efficacy support',
-  'minion damage support',
-  'concentrated effect support',
-  'brutality support',
-  'deadly ailments support',
-  'vile toxins support',
-  'impale support',
-  'melee physical damage support',
-  'added fire damage support',
-  'close combat support',
-  'increased critical damage support',
-  'cruelty support',
-  'void manipulation support',
-  'hypothermia support',
-  'trap and mine damage support',
-  'multiple totems support',
-  'Exceptional controlled destruction support',
-  'Exceptional elemental focus support',
-  'Exceptional spell echo support',
-  'Exceptional brutality support',
-  'Exceptional swift affliction support',
-  'Exceptional deadly ailments support',
-  'Exceptional void manipulation support',
-  'Exceptional minion damage support',
-  'Exceptional added fire damage support',
-  'Exceptional melee physical damage support',
+  'heft',
+  'brutality',
+  'concentrated effect',
+  'inspiration',
+  'magnified effect',
+  'martial tempo',
+  'close combat',
+  'longshot',
+  'ambush',
+  'persistent ground',
+  'lethal skill',
+  'premeditation',
+  'fire infusion',
+  'cold infusion',
+  'lightning infusion',
+  'withering touch',
+  'primal strikes',
+  'minion damage',
 ]);
 
 /**
- * Support gems that reduce enemy resistances or provide damage penetration.
- * Penetration is critical against high-resistance bosses (Shaper, Elder, Ubers).
- * An elemental skill without penetration loses ~33-50% effective DPS vs endgame bosses.
+ * PoE2 support gems that reduce enemy resistances or provide elemental penetration.
+ * Penetration is critical against PoE2 pinnacle bosses with overcapped resistances.
  */
 const PENETRATION_GEMS = new Set([
-  'fire penetration support',
-  'cold penetration support',
-  'lightning penetration support',
-  'elemental penetration support',
-  'combustion support',  // reduces enemy fire resist on ignite
-  'hypothermia support', // cold exposure
-  'storm brand',         // lightning exposure via some interactions
-  'void manipulation support',
-  'Exceptional fire penetration support',
-  'Exceptional cold penetration support',
-  'Exceptional lightning penetration support',
-  'Exceptional void manipulation support',
+  'fire penetration',
+  'cold penetration',
+  'lightning penetration',
+  'elemental penetration',
+  'fire exposure',
+  'cold exposure',
+  'lightning exposure',
+  'conduction',          // shock applies lightning exposure
+  'glaciation',          // chill/freeze applies cold exposure
+  'ignition',            // ignite applies fire exposure
+  'lightning mastery',
 ]);
 
 /**
- * Support gems primarily useful for clear speed (AoE, projectile proliferation).
+ * PoE2 supports primarily useful for clear speed (AoE / projectile proliferation).
  */
 const CLEAR_SPEED_GEMS = new Set([
-  'greater multiple projectiles support',
-  'Exceptional greater multiple projectiles support',
-  'chain support',
-  'fork support',
-  'Exceptional fork support',
-  'pierce support',
-  'volley support',
-  'lesser multiple projectiles support',
-  'spell cascade support',
-  'Exceptional spell cascade support',
-  'reap support',
+  'scattershot',
+  'chain',
+  'fork',
+  'pierce',
+  'magnified effect',
+  'spell cascade',
+  'far shot',          // ranger keystone, not support — included for archetype detection
 ]);
 
 /**
- * Support gems primarily useful for single-target / bossing DPS.
+ * PoE2 supports primarily useful for single-target / bossing DPS.
  */
 const BOSSING_GEMS = new Set([
-  'concentrated effect support',
-  'Exceptional concentrated effect support',
-  'barrage support',
-  'Exceptional added fire damage support',
-  'Exceptional deadly ailments support',
-  'Exceptional vile toxins support',
-  'empower support',
+  'concentrated effect',
+  'heft',
+  'brutality',
+  'inspiration',
+  'premeditation',
+  'lethal skill',
+  'persistent ground',
+  'ambush',
+  'longshot',
 ]);
 
 /**
@@ -349,7 +323,7 @@ function analyzeSkillGroup(
       severity: 'high',
       message: 'No "more" damage multiplier supports on main skill',
       suggestion:
-        'Add at least 1–2 "more" multipliers: Controlled Destruction, Elemental Focus, Spell Echo, Multistrike, Swift Affliction, Efficacy, Minion Damage, etc.',
+        'Add at least 1–2 "more" multipliers from PoE2 0.5 supports: Heft, Brutality, Concentrated Area, Magnified Area, Premeditation, Persistent Ground, Primal Strikes, etc.',
     });
   } else if (group.isMainSkill && analysis.linkCount >= 5 && moreMultiplierCount < 2) {
     analysis.issues.push({
@@ -386,7 +360,9 @@ function analyzeSkillGroup(
   // Check gem levels
   for (const gem of group.gems) {
     const level = gem.level || 1;
-    if (level < 20 && !gem.name.includes('Enlighten') && !gem.name.includes('Empower')) {
+    // PoE2 doesn't have Empower/Enlighten/Enhance equivalents — level 20 is the
+    // de-facto cap for most gems and players upgrade via gem quality / cutting.
+    if (level < 20) {
       analysis.issues.push({
         type: 'low_level',
         severity: level < 15 ? 'medium' : 'low',
@@ -414,13 +390,13 @@ function analyzeSkillGroup(
 
   if (skillTypes.includes('attack')) {
     if (!supportNames.some((s) => s.includes('multistrike') || s.includes('faster attacks'))) {
-      analysis.suggestions.push('Consider Multistrike or Faster Attacks Support for attack speed');
+      analysis.suggestions.push('Consider Primal Strikes (more attack damage) or a tiered speed support for PoE2 0.5 attack builds');
     }
   }
 
   if (skillTypes.includes('spell')) {
     if (!supportNames.some((s) => s.includes('spell echo') || s.includes('faster casting'))) {
-      analysis.suggestions.push('Consider Spell Echo or Faster Casting Support');
+      analysis.suggestions.push('Consider Hourglass (faster cast) or Concentrated Area (more damage) for PoE2 0.5 spell builds');
     }
   }
 
@@ -438,7 +414,7 @@ function analyzeSkillGroup(
 
   if (skillTypes.includes('dot')) {
     if (!supportNames.some((s) => s.includes('efficacy') || s.includes('swift affliction'))) {
-      analysis.suggestions.push('Consider Efficacy or Swift Affliction Support for DoT builds');
+      analysis.suggestions.push('Consider Persistent Ground (longer ground-DoT duration) or Magnified Area for PoE2 0.5 DoT builds');
     }
   }
 
@@ -458,8 +434,8 @@ function analyzeSkillGroup(
     analysis.issues.push({
       type: 'wrong_support',
       severity: 'high',
-      message: 'Elemental Focus prevents ailments, conflicting with ailment supports',
-      suggestion: 'Remove either Elemental Focus or ailment-specific supports',
+      message: 'PoE2: some elemental damage supports suppress ailments — verify Conduction/Glaciation/Ignition pairings if you rely on shock/freeze/ignite for damage',
+      suggestion: 'Choose between dedicated hit-damage supports (Concentrated Area, Magnified Area) OR ailment supports (Conduction, Glaciation, Ignition, Persistent Ground) — they have different scaling profiles',
     });
   }
 
@@ -467,11 +443,11 @@ function analyzeSkillGroup(
   if (group.isMainSkill && analysis.linkCount >= 5) {
     if (hasClearGem && !hasBossingGem) {
       analysis.suggestions.push(
-        'Setup is optimised for clear speed. For bossing swap a clear gem (GMP/Chain) for Concentrated Effect or a "more" multiplier.'
+        'Setup is optimised for clear speed. For bossing swap a clear support (Chain/Fork) for Concentrated Area or a "more" multiplier.'
       );
     } else if (!hasClearGem && !hasBossingGem) {
       analysis.suggestions.push(
-        'Consider whether you need a clear speed gem (GMP/Chain for projectiles, Spell Cascade for spells) or a bossing gem (Concentrated Effect, Empower).'
+        'PoE2 0.5 clear speed: Chain/Fork/Pierce for projectiles, Spell Cascade/Magnified Area for spells. Bossing: Concentrated Area, Heft, Premeditation.'
       );
     }
   }
@@ -510,7 +486,7 @@ export function analyzeSkillSetup(
     if (mainSkill.moreMultiplierCount < 2) {
       generalSuggestions.push(
         `Main skill has only ${mainSkill.moreMultiplierCount} "more" multiplier support(s). ` +
-        `"More" multipliers (Controlled Destruction, Elemental Focus, Multistrike, etc.) are multiplicative — ` +
+        `PoE2 0.5 "more" multiplier supports (Heft, Brutality, Concentrated Area, Magnified Area, etc.) are multiplicative — ` +
         `a second "more" multiplier at ×1.4 added to an existing ×1.4 gives ×1.96 total, which is far stronger than any "increased" node.`
       );
     }

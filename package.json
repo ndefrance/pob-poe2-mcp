@@ -1,7 +1,7 @@
 {
-  "name": "pob-mcp-server",
-  "version": "1.0.0",
-  "description": "MCP server for Path of Building integration",
+  "name": "pob-poe2-mcp-server",
+  "version": "1.0.0-poe2.1",
+  "description": "MCP server for Path of Building 2 integration (PoE2 fork of ianderse/pob-mcp)",
   "main": "build/index.js",
   "type": "module",
   "scripts": {

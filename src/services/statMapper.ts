@@ -41,6 +41,14 @@ export const STAT_MAPPINGS: StatMapping[] = [
     aliases: ['maximum mana', 'max mana', 'total mana', '+# to maximum mana'],
     description: 'Total maximum mana',
   },
+  // PoE2-specific resource — Spirit (no pseudo aggregator yet, use explicit stat ID)
+  {
+    pobName: 'Spirit',
+    tradeId: 'explicit.stat_3981240776',
+    category: 'explicit',
+    aliases: ['spirit', '+# to spirit', 'maximum spirit', 'total spirit'],
+    description: 'Spirit (PoE2 reservation resource)',
+  },
 
   // Resistances
   {
@@ -478,6 +486,59 @@ export class StatMapper {
 
     this.loaded = true;
     console.error(`[StatMapper] Loaded ${this.allStats.length} stats from trade API`);
+  }
+
+  /**
+   * Fetch live stats from the PoE2 trade API and merge into the mapping table.
+   * Called at startup so explicit stat IDs reflect the current PoE2 catalog
+   * instead of stale PoE1 hardcoded values.
+   *
+   * Merges (rather than replaces) the static mappings so curated pseudo aliases
+   * are preserved while explicit/implicit/rune entries get current IDs.
+   */
+  async loadLivePoE2Stats(): Promise<boolean> {
+    const isPoE2 = (process.env.POE2_MODE ?? 'true').toLowerCase() !== 'false';
+    const url = isPoE2
+      ? 'https://www.pathofexile.com/api/trade2/data/stats'
+      : 'https://www.pathofexile.com/api/trade/data/stats';
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'pob-poe2-mcp/1.0' },
+      });
+      if (!res.ok) {
+        console.error(`[StatMapper] live fetch failed (${res.status}); keeping static mappings`);
+        return false;
+      }
+      const data = await res.json();
+      if (!data?.result) {
+        console.error('[StatMapper] live fetch returned unexpected shape; keeping static');
+        return false;
+      }
+      let added = 0;
+      for (const category of data.result) {
+        const categoryType = this.getCategoryType(category.label);
+        for (const entry of category.entries || []) {
+          if (!entry.id) continue;
+          // Skip if a curated mapping already owns this trade ID
+          if (this.mappingsByTradeId.has(entry.id.toLowerCase())) continue;
+          const mapping: StatMapping = {
+            pobName: entry.id,
+            tradeId: entry.id,
+            category: categoryType,
+            aliases: [entry.text, entry.id].filter(Boolean),
+            description: entry.text,
+          };
+          this.addMapping(mapping);
+          this.allStats.push(mapping);
+          added++;
+        }
+      }
+      console.error(`[StatMapper] merged ${added} live ${isPoE2 ? 'PoE2' : 'PoE1'} stats from trade API`);
+      return true;
+    } catch (err: any) {
+      console.error(`[StatMapper] live fetch error: ${err?.message ?? err}; keeping static mappings`);
+      return false;
+    }
   }
 
   /**

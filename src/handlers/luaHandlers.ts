@@ -165,12 +165,13 @@ export async function handleLuaLoadBuild(
         summaryLines.push(`**${info.name || name}** | Level ${info.level} ${info.className ?? ''}${info.ascendClassName ? ` (${info.ascendClassName})` : ''}`);
       }
 
-      const s = await luaClient.getStats(['Life', 'TotalDPS', 'CombinedDPS', 'MinionTotalDPS',
+      const s = await luaClient.getStats(['Life', 'Spirit', 'TotalDPS', 'CombinedDPS', 'FullDPS', 'MinionTotalDPS',
         'FireResist', 'ColdResist', 'LightningResist', 'ChaosResist', 'TotalEHP']).catch(() => null);
       if (s) {
-        const dps = Number(s.CombinedDPS || s.TotalDPS || s.MinionTotalDPS || 0);
-        const dpsLabel = (s.MinionTotalDPS && !s.TotalDPS) ? 'Minion DPS' : 'DPS';
-        summaryLines.push(`Life: ${Number(s.Life ?? 0).toLocaleString()} | ${dpsLabel}: ${Math.round(dps).toLocaleString()} | EHP: ${Number(s.TotalEHP ?? 0).toLocaleString()}`);
+        const dps = Number(s.FullDPS || s.CombinedDPS || s.TotalDPS || s.MinionTotalDPS || 0);
+        const dpsLabel = (s.MinionTotalDPS && !s.TotalDPS && !s.FullDPS) ? 'Minion DPS' : 'DPS';
+        const spiritStr = s.Spirit ? ` | Spirit: ${Number(s.Spirit).toLocaleString()}` : '';
+        summaryLines.push(`Life: ${Number(s.Life ?? 0).toLocaleString()}${spiritStr} | ${dpsLabel}: ${Math.round(dps).toLocaleString()} | EHP: ${Number(s.TotalEHP ?? 0).toLocaleString()}`);
         summaryLines.push(`Resists: F${s.FireResist}% C${s.ColdResist}% L${s.LightningResist}% Ch${s.ChaosResist}%`);
       }
 
@@ -219,11 +220,15 @@ export async function handleLuaGetStats(context: LuaHandlerContext, category?: s
     let fields: string[] | undefined;
     if (category === 'offense') {
       fields = [
-        'TotalDPS', 'CombinedDPS', 'TotalDot', 'TotalDotDPS', 'WithBleedDPS', 'WithIgniteDPS',
-        'WithPoisonDPS', 'IgniteDPS', 'BleedDPS', 'PoisonDPS', 'AverageDamage', 'AverageBurstDamage',
+        'TotalDPS', 'CombinedDPS', 'FullDPS', 'TotalDot', 'TotalDotDPS', 'FullDotDPS',
+        'WithBleedDPS', 'WithIgniteDPS', 'WithPoisonDPS', 'IgniteDPS', 'BleedDPS', 'PoisonDPS',
+        'AverageDamage', 'AverageBurstDamage',
         'Speed', 'HitChance', 'CritChance', 'CritMultiplier', 'PreEffectiveCritChance',
         'EffectiveCritChance', 'MainHandAccuracy', 'OffHandAccuracy', 'ManaCost', 'ManaPerSecondCost',
-        'LifeCost', 'LifePerSecondCost', 'ESCost', 'ESPerSecondCost', 'RageCost',
+        'ManaPercentCost', 'ManaPercentPerSecondCost',
+        'LifeCost', 'LifePerSecondCost', 'LifePercentCost', 'LifePercentPerSecondCost',
+        'ESCost', 'ESPerSecondCost', 'ESPercentPerSecondCost',
+        'RageCost', 'SoulCost', 'CullingDPS', 'ReservationDPS',
         // Minion stats (populated for summoner builds)
         'MinionTotalDPS', 'MinionCombinedDPS', 'MinionAverageDamage', 'MinionSpeed',
         'MinionLife', 'MinionArmour', 'MinionEnergyShield',
@@ -232,14 +237,24 @@ export async function handleLuaGetStats(context: LuaHandlerContext, category?: s
     } else if (category === 'defense') {
       fields = [
         'Life', 'LifeRegen', 'LifeRegenRecovery', 'LifeLeechGainRate', 'LifeUnreserved',
+        'LifeUnreservedPercent', 'LifeRecoverable',
         'Mana', 'ManaRegen', 'ManaRegenRecovery', 'ManaLeechGainRate', 'ManaUnreserved',
+        'ManaUnreservedPercent',
+        // PoE2 resources
+        'Spirit', 'SpiritUnreserved', 'SpiritUnreservedPercent',
+        'Rage', 'RageRegenRecovery',
         'EnergyShield', 'EnergyShieldRegen', 'EnergyShieldRegenRecovery', 'EnergyShieldLeechGainRate',
+        'EnergyShieldRecoveryCap',
         'Ward', 'Armour', 'Evasion', 'EvasionChance', 'PhysicalDamageReduction',
-        'BlockChance', 'SpellBlockChance', 'AttackDodgeChance', 'SpellDodgeChance',
+        'MeleeEvadeChance', 'ProjectileEvadeChance',
+        'BlockChance', 'SpellBlockChance', 'EffectiveBlockChance', 'EffectiveSpellBlockChance',
+        'AttackDodgeChance', 'SpellDodgeChance',
         'FireResist', 'ColdResist', 'LightningResist', 'ChaosResist',
         'FireResistOverCap', 'ColdResistOverCap', 'LightningResistOverCap', 'ChaosResistOverCap',
         'TotalEHP', 'PhysicalMaximumHitTaken', 'FireMaximumHitTaken', 'ColdMaximumHitTaken',
-        'LightningMaximumHitTaken', 'ChaosMaximumHitTaken', 'EffectiveSpellSuppressionChance'
+        'LightningMaximumHitTaken', 'ChaosMaximumHitTaken', 'EffectiveSpellSuppressionChance',
+        'PowerCharges', 'PowerChargesMax', 'FrenzyCharges', 'FrenzyChargesMax',
+        'EnduranceCharges', 'EnduranceChargesMax',
       ];
     }
     // If category is 'all' or undefined, get all stats (fields = undefined)
@@ -255,8 +270,10 @@ export async function handleLuaGetStats(context: LuaHandlerContext, category?: s
 
       // Group by offense/defense if showing all
       if (!category || category === 'all') {
-        const offenseKeys = ['DPS', 'Damage', 'Speed', 'Crit', 'Hit', 'Accuracy', 'Cost'];
-        const defenseKeys = ['Life', 'Mana', 'Energy', 'Shield', 'Resist', 'Block', 'Dodge', 'Evasion', 'Armour', 'Ward', 'EHP', 'Maximum', 'Regen', 'Leech', 'Recovery'];
+        const offenseKeys = ['DPS', 'Damage', 'Speed', 'Crit', 'Hit', 'Accuracy', 'Cost', 'Charges'];
+        const defenseKeys = ['Life', 'Mana', 'Energy', 'Shield', 'Resist', 'Block', 'Dodge', 'Evasion', 'Armour', 'Ward', 'EHP', 'Maximum', 'Regen', 'Leech', 'Recovery',
+          // PoE2 resources
+          'Spirit', 'Rage', 'Suppression', 'Reduction'];
 
         // Sort offense so DPS metrics appear first, then apply cap
         const offenseAll = entries.filter(([key]) => offenseKeys.some(ok => key.includes(ok)));
@@ -292,10 +309,14 @@ export async function handleLuaGetStats(context: LuaHandlerContext, category?: s
           textLines.push('');
         }
 
-        if (other.length > 0 && other.length < 10) {
+        if (other.length > 0) {
           textLines.push('**Other:**');
-          for (const [key, value] of other) {
+          const otherCap = 20;
+          for (const [key, value] of other.slice(0, otherCap)) {
             textLines.push(`${key}: ${value}`);
+          }
+          if (other.length > otherCap) {
+            textLines.push(`  ... +${other.length - otherCap} more`);
           }
         }
       } else {
@@ -329,16 +350,9 @@ export async function handleLuaGetStats(context: LuaHandlerContext, category?: s
   });
 }
 
-const CLASS_NAMES: Record<number, string> = { 0:'Scion', 1:'Marauder', 2:'Ranger', 3:'Witch', 4:'Duelist', 5:'Templar', 6:'Shadow' };
-const ASCENDANCY_NAMES: Record<number, Record<number, string>> = {
-  0: {1:'Ascendant'},
-  1: {1:'Juggernaut', 2:'Berserker', 3:'Chieftain'},
-  2: {1:'Raider', 2:'Deadeye', 3:'Pathfinder'},
-  3: {1:'Occultist', 2:'Elementalist', 3:'Necromancer'},
-  4: {1:'Slayer', 2:'Gladiator', 3:'Champion'},
-  5: {1:'Inquisitor', 2:'Hierophant', 3:'Guardian'},
-  6: {1:'Assassin', 2:'Trickster', 3:'Saboteur'},
-};
+// Class/ascendancy names are resolved live from PoB2's tree data via the bridge's
+// get_tree response (which now includes className/ascendClassName) instead of being
+// hardcoded — PoB2 has different classes per tree version and they change with updates.
 
 export async function handleLuaGetTree(context: LuaHandlerContext, includeNodeIds?: boolean) {
   return wrapHandler('get passive tree', async () => {
@@ -356,11 +370,11 @@ export async function handleLuaGetTree(context: LuaHandlerContext, includeNodeId
     if (tree && typeof tree === 'object') {
       textLines.push(`Tree Version: ${tree.treeVersion ?? 'Unknown'}`);
       const classId = tree.classId != null ? tree.classId : undefined;
-      const className = classId != null ? CLASS_NAMES[classId] : undefined;
+      const className = tree.className as string | undefined;
       textLines.push(`Class: ${className ?? 'Unknown'} (ID: ${classId ?? 'Unknown'})`);
       const ascId = tree.ascendClassId != null ? tree.ascendClassId : undefined;
-      const ascName = classId != null && ascId != null && ascId > 0 ? ASCENDANCY_NAMES[classId]?.[ascId] : (ascId === 0 ? 'None' : undefined);
-      textLines.push(`Ascendancy: ${ascName ?? 'Unknown'} (ID: ${ascId ?? 'Unknown'})`);
+      const ascName = tree.ascendClassName as string | undefined;
+      textLines.push(`Ascendancy: ${ascName ?? (ascId === 0 ? 'None' : 'Unknown')} (ID: ${ascId ?? 'Unknown'})`);
 
       if (tree.secondaryAscendClassId) {
         textLines.push(`Secondary Ascendancy ID: ${tree.secondaryAscendClassId}`);
@@ -483,6 +497,175 @@ export async function handleLuaGetBuildInfo(context: LuaHandlerContext) {
     return {
       content: [{ type: "text" as const, text }],
     };
+  });
+}
+
+export async function handleLuaGetDpsBreakdown(context: LuaHandlerContext) {
+  return wrapHandler('get DPS breakdown', async () => {
+    await context.ensureLuaClient();
+    const luaClient = context.getLuaClient();
+    if (!luaClient) throw new Error('Lua client not initialized');
+
+    const b = await luaClient.getDpsBreakdown();
+    if (!b) {
+      return { content: [{ type: 'text' as const, text: 'No DPS data — load a build first.' }] };
+    }
+
+    const lines: string[] = ['=== DPS Breakdown ==='];
+    if (b.meta) {
+      lines.push(`Build: ${b.meta.build_name ?? 'Unnamed'} | L${b.meta.level ?? '?'} ${b.meta.class_name ?? ''}${b.meta.ascend_class ? ` (${b.meta.ascend_class})` : ''} | tree ${b.meta.tree_version ?? '?'}`);
+    }
+
+    const fmt = (v: any) => v == null ? '-' : (typeof v === 'number' ? Math.round(v * 100) / 100 : String(v));
+    const T = b.totals || {};
+    lines.push('', '**Totals**');
+    if (T.AverageHit != null) lines.push(`  Average Hit:        ${fmt(T.AverageHit)}`);
+    if (T.AverageDamage != null && T.AverageDamage !== T.AverageHit) lines.push(`  Average Damage:     ${fmt(T.AverageDamage)}`);
+    if (T.AverageBurstDamage != null) lines.push(`  Average Burst:      ${fmt(T.AverageBurstDamage)}`);
+    if (T.TotalDPS != null) lines.push(`  Total DPS:          ${fmt(T.TotalDPS)}`);
+    if (T.CombinedDPS != null && T.CombinedDPS !== T.TotalDPS) lines.push(`  Combined DPS:       ${fmt(T.CombinedDPS)}  (active skill + dots)`);
+    if (T.FullDPS != null) lines.push(`  Full DPS:           ${fmt(T.FullDPS)}  (sum of all flagged groups)`);
+    if (T.TotalDot != null && T.TotalDot !== 0) lines.push(`  Total DoT:          ${fmt(T.TotalDot)}`);
+    if (T.WithPoisonDPS && T.WithPoisonDPS !== T.TotalDPS) lines.push(`  With Poison DPS:    ${fmt(T.WithPoisonDPS)}`);
+    if (T.WithBleedDPS  && T.WithBleedDPS  !== T.TotalDPS) lines.push(`  With Bleed DPS:     ${fmt(T.WithBleedDPS)}`);
+    if (T.WithIgniteDPS && T.WithIgniteDPS !== T.TotalDPS) lines.push(`  With Ignite DPS:    ${fmt(T.WithIgniteDPS)}`);
+
+    if (b.crit) {
+      lines.push('', '**Crit**');
+      lines.push(`  Crit Chance:        ${fmt(b.crit.chance)}%${b.crit.effective_chance != null ? ` (effective ${fmt(b.crit.effective_chance)}%)` : ''}`);
+      lines.push(`  Crit Multi:         ${fmt(b.crit.multiplier)}x`);
+      if (b.crit.by_type_avg && Object.keys(b.crit.by_type_avg).length) {
+        const parts = Object.entries(b.crit.by_type_avg).map(([k, v]) => `${k}=${fmt(v)}`);
+        lines.push(`  Crit avg by type:   ${parts.join(', ')}`);
+      }
+    }
+
+    if (b.damage_by_type && Object.keys(b.damage_by_type).length) {
+      lines.push('', '**Damage by Type (avg hit)**');
+      for (const [k, v] of Object.entries(b.damage_by_type)) lines.push(`  ${k.padEnd(10)} ${fmt(v)}`);
+    }
+
+    const dotEntries: string[] = [];
+    if (b.poison_dot_dps) dotEntries.push(`Poison ${fmt(b.poison_dot_dps)}`);
+    if (b.bleed_dot_dps)  dotEntries.push(`Bleed ${fmt(b.bleed_dot_dps)}`);
+    if (b.ignite_dot_dps) dotEntries.push(`Ignite ${fmt(b.ignite_dot_dps)}`);
+    if (b.decay_dot_dps)  dotEntries.push(`Decay ${fmt(b.decay_dot_dps)}`);
+    if (dotEntries.length) lines.push('', '**DoT DPS**', '  ' + dotEntries.join(' | '));
+
+    if (b.hit) {
+      lines.push('', '**Hit / Accuracy**');
+      if (b.hit.hit_chance != null) lines.push(`  Hit Chance:         ${fmt(b.hit.hit_chance)}%`);
+      if (b.hit.main_hand_accuracy != null) lines.push(`  Main Hand Accuracy: ${fmt(b.hit.main_hand_accuracy)}`);
+      if (b.hit.off_hand_accuracy != null) lines.push(`  Off Hand Accuracy:  ${fmt(b.hit.off_hand_accuracy)}`);
+    }
+
+    if (b.speed) {
+      lines.push('', '**Speed**');
+      if (b.speed.speed != null)              lines.push(`  Skill Use Rate:     ${fmt(b.speed.speed)}/sec`);
+      if (b.speed.effective_movement != null) lines.push(`  Movement Speed:     ${fmt(b.speed.effective_movement)}x`);
+    }
+
+    if (b.costs) {
+      const costLines: string[] = [];
+      const C = b.costs;
+      if (C.mana)            costLines.push(`Mana ${fmt(C.mana)}/cast`);
+      if (C.mana_per_second) costLines.push(`Mana ${fmt(C.mana_per_second)}/sec`);
+      if (C.life)            costLines.push(`Life ${fmt(C.life)}/cast`);
+      if (C.es)              costLines.push(`ES ${fmt(C.es)}/cast`);
+      if (C.rage)            costLines.push(`Rage ${fmt(C.rage)}`);
+      if (C.soul)            costLines.push(`Soul ${fmt(C.soul)}`);
+      if (costLines.length) lines.push('', '**Costs**', '  ' + costLines.join(' | '));
+    }
+
+    if (b.penetration && Object.values(b.penetration).some((v: any) => v)) {
+      lines.push('', '**Penetration**');
+      for (const [k, v] of Object.entries(b.penetration)) if (v) lines.push(`  ${k.padEnd(10)} ${fmt(v)}%`);
+    }
+
+    if (b.charges_active) {
+      const active = Object.entries(b.charges_active)
+        .filter(([k, v]) => !k.endsWith('_max') && v && v !== 0);
+      if (active.length) {
+        lines.push('', '**Active Charges**');
+        for (const [k, v] of active) {
+          const max = (b.charges_active as any)[`${k}_max`];
+          lines.push(`  ${k.padEnd(12)} ${fmt(v)}${max ? `/${max}` : ''}`);
+        }
+      }
+    }
+
+    if (b.enemy_status) {
+      const E = b.enemy_status;
+      const parts: string[] = [];
+      if (E.enemy_is_boss) parts.push('boss=true');
+      if (E.enemy_level) parts.push(`level=${E.enemy_level}`);
+      if (E.enemy_phys_reduction) parts.push(`phys_reduction=${E.enemy_phys_reduction}%`);
+      if (parts.length) lines.push('', `**Enemy config:** ${parts.join(', ')}`);
+    }
+
+    return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  });
+}
+
+export async function handleLuaSetFullCombatState(context: LuaHandlerContext, args: { enable?: boolean }) {
+  return wrapHandler('set full combat state', async () => {
+    await context.ensureLuaClient();
+    const luaClient = context.getLuaClient();
+    if (!luaClient) throw new Error('Lua client not initialized');
+
+    const enable = args.enable !== false; // default true
+    const applied = await luaClient.setFullCombatState(enable);
+
+    const lines: string[] = [
+      `=== Full Combat State ${enable ? 'ENABLED' : 'DISABLED'} ===`,
+      '',
+      `Buff mode: ${applied?.buff_mode ?? '?'}`,
+      `Flasks toggled: ${applied?.flasks_toggled?.length ? applied.flasks_toggled.join(', ') : 'none'}`,
+      `Charge usage flags set: ${applied?.charges_set ?? 0}`,
+      `Combat conditions set: ${applied?.conditions_set ?? 0}`,
+      `Buffs set: ${applied?.buffs_set ?? 0}`,
+      '',
+      enable
+        ? 'Calc now treats all flasks active, all charges available, and combat-only buffs (Onslaught, Innervate, etc.) as active. Re-run lua_get_stats or lua_get_dps_breakdown to see GUI-equivalent DPS.'
+        : 'Calc reset to passive state (no flasks active, no charges, no combat buffs).',
+    ];
+
+    return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  });
+}
+
+export async function handleLuaSimulateChange(context: LuaHandlerContext, args: {
+  add_nodes?: number[];
+  remove_nodes?: number[];
+  use_full_dps?: boolean;
+}) {
+  return wrapHandler('simulate change', async () => {
+    await context.ensureLuaClient();
+    const luaClient = context.getLuaClient();
+    if (!luaClient) throw new Error('Lua client not initialized');
+
+    const diff = await luaClient.simulateChange({
+      addNodes: args.add_nodes,
+      removeNodes: args.remove_nodes,
+      useFullDPS: args.use_full_dps,
+    });
+
+    if (!diff || Object.keys(diff).length === 0) {
+      return { content: [{ type: 'text' as const, text: 'No change calculated — verify node IDs and current build state.' }] };
+    }
+
+    const fmt = (v: any) => v == null ? '-' : (typeof v === 'number' ? Math.round(v * 100) / 100 : String(v));
+    const lines: string[] = ['=== Simulated Change ===', ''];
+    const adds = args.add_nodes?.length ? `+${args.add_nodes.join(', +')}` : '';
+    const rems = args.remove_nodes?.length ? `-${args.remove_nodes.join(', -')}` : '';
+    if (adds || rems) lines.push(`Hypothetical: ${[adds, rems].filter(Boolean).join(', ')}`);
+    lines.push('', '| Stat | Before | After | Δ |', '|------|--------|-------|----|');
+    for (const [stat, vals] of Object.entries(diff)) {
+      const v = vals as any;
+      const deltaStr = v.delta != null ? (v.delta > 0 ? `+${fmt(v.delta)}` : fmt(v.delta)) : '-';
+      lines.push(`| ${stat} | ${fmt(v.before)} | ${fmt(v.after)} | ${deltaStr} |`);
+    }
+    return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
   });
 }
 

@@ -110,13 +110,14 @@ export class TradeQueryBuilder {
   }
 
   /**
-   * Filter by online status
-   * - 'available': Shows both instant buyout and in-person trade items (recommended)
-   * - 'online': Only shows items from currently online sellers
-   * - 'onlineleague': Only shows items from sellers online in the same league
-   * - 'any': Shows all items regardless of seller status
+   * Filter by trade availability / online status (PoE2 0.5 expanded options).
+   * - 'securable':    Instant Buyout ONLY (Ange NPC / Market Panel — no whisper needed)
+   * - 'available':    Instant Buyout + In Person (both modes)
+   * - 'onlineleague': In Person, seller online in this league (whisper required)
+   * - 'online':       In Person, seller online anywhere (whisper required)
+   * - 'any':          Any listing, online or offline
    */
-  withOnlineStatus(status: 'available' | 'online' | 'onlineleague' | 'any'): this {
+  withOnlineStatus(status: 'securable' | 'available' | 'online' | 'onlineleague' | 'any'): this {
     this.query.query.status = { option: status };
     return this;
   }
@@ -517,14 +518,30 @@ export class TradeQueryBuilder {
    * Apply common search options
    */
   applyOptions(options: SearchOptions): this {
-    if (options.onlineOnly !== false) {
-      // Use 'available' status to get both instant buyout AND in-person trade items
+    // PoE2 0.5 status filter values:
+    //   'securable'    = Instant Buyout ONLY (Ange NPC, no whisper, true instant)
+    //   'available'    = Instant Buyout + In Person
+    //   'onlineleague' = In Person, online in this league (whisper)
+    //   'online'       = In Person, online anywhere (whisper)
+    //   'any'          = any listing
+    // Precedence: explicit `tradeMode` wins; otherwise legacy onlineOnly maps to
+    // 'onlineleague' (true) or 'any' (false).
+    const mode = (options as any).tradeMode as string | undefined;
+    if (mode === 'instant') {
+      this.withOnlineStatus('securable');
+    } else if (mode === 'instant_or_inperson') {
       this.withOnlineStatus('available');
+    } else if (mode === 'inperson_online' || options.onlineOnly !== false) {
+      this.withOnlineStatus('onlineleague');
+    } else {
+      this.withOnlineStatus('any');
     }
 
-    // Note: We intentionally do NOT set sale_type filter here.
-    // By omitting it, we search for ALL items (both priced instant-buyout items AND unpriced negotiable items).
-    // This gives users the full range of available items.
+    // Optional: restrict to items with a fixed buyout price (skip "negotiable" / unpriced listings).
+    // When true → sale_type=priced. Default behaviour omits the filter so both kinds return.
+    if ((options as any).buyoutOnly) {
+      this.withSaleType('priced');
+    }
 
     if (options.minPrice !== undefined || options.maxPrice !== undefined) {
       this.withPriceRange(options.minPrice, options.maxPrice, options.priceCurrency);

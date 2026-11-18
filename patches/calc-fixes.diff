@@ -1,0 +1,494 @@
+From 8c88b75711d6623bcbce2e2631d4fdc970f295ca Mon Sep 17 00:00:00 2001
+From: ndefrance <ndefrance@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:57:40 -0800
+Subject: [PATCH 1/8] Ghost Dance: Shroud interval/uptime output and an option
+ to average the ES regeneration over constant Hits
+
+Shroud interval = base_cooldown_modifiable_repeat_interval_ms with Cooldown Recovery
+(cooldown_recovery_modifiers_also_apply_to_repeat_interval); each Shroud is lost on the
+next Hit and the regeneration lasts for Recently (4 s), so uptime = min(1, 4 s / interval).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Modules/CalcPerform.lua   | 8 ++++++++
+ src/Modules/ConfigOptions.lua | 4 ++++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/src/Modules/CalcPerform.lua b/src/Modules/CalcPerform.lua
+index 84673bf..6eaede6 100644
+--- a/src/Modules/CalcPerform.lua
++++ b/src/Modules/CalcPerform.lua
+@@ -2240,6 +2240,14 @@ function calcs.perform(env, skipEHP)
+ 							inc = inc + skillModList:Sum("INC", skillCfg, "ArchonBuffEffect")
+ 						end
+ 						local more = modStore:More(skillCfg, "BuffEffect", "BuffEffectOnSelf") * calcLib.mod(modStore, skillCfg, "Magnitude")
++						if activeSkill.activeEffect.grantedEffect.name == "Ghost Dance" then
++							-- One Shroud per repeat interval (Cooldown Recovery applies), lost on the next Hit, regeneration for "Recently" (4 s) after each loss
++							output.GhostShroudInterval = calcSkillCooldown(skillModList, skillCfg, activeSkill.skillData)
++							output.GhostDanceUptime = m_min(1, 4 / m_max(output.GhostShroudInterval, 0.001))
++							if modDB:Flag(nil, "GhostDanceAverageUptime") then
++								more = more * output.GhostDanceUptime
++							end
++						end
+ 						srcList:ScaleAddList(buff.modList, (1 + inc / 100) * more)
+ 						mergeBuff(srcList, buffs, buff.name)
+ 						if activeSkill.skillData.thisIsNotABuff then
+diff --git a/src/Modules/ConfigOptions.lua b/src/Modules/ConfigOptions.lua
+index 9fef332..7883e07 100644
+--- a/src/Modules/ConfigOptions.lua
++++ b/src/Modules/ConfigOptions.lua
+@@ -249,6 +249,10 @@ local configSettings = {
+ 	{ var = "conditionLostGhostShroudRecently", type = "check", label = "Have you lost a Ghost Shroud Recently?", ifSkill = "Ghost Dance", tooltip = "Ghost Dance regenerates Energy Shield equal to 2% of your Evasion Rating per second while you have lost a Ghost Shroud Recently. You gain a Shroud about every 10 to 12 seconds (maximum 3) and lose one when you are Hit.", apply = function(val, modList, enemyModList)
+ 		modList:NewMod("Condition:LostGhostShroudRecently", "FLAG", true, "Config")
+ 	end },
++	{ var = "ghostDanceAverageUptime", type = "check", label = "Average it over constant Hits?", ifSkill = "Ghost Dance", tooltip = "Scales the Ghost Dance regeneration by its uptime while you are Hit faster than you gain Shrouds:\neach Shroud is lost on the next Hit and regenerates for 4 seconds (Recently), so uptime = 4 s / Shroud interval (max 100%).\nThe interval is 12 s at gem level 1 to 10.1 s at level 20; Cooldown Recovery Rate applies. Implies the option above.", apply = function(val, modList, enemyModList)
++		modList:NewMod("Condition:LostGhostShroudRecently", "FLAG", true, "Config")
++		modList:NewMod("GhostDanceAverageUptime", "FLAG", true, "Config")
++	end },
+ 	{ label = "Barrage:", ifSkill = "Barrage" },
+ 	{ var = "barrageEmpoweredOnly", type = "check", label = "Only count the Empowered Attack (burst)?", ifSkill = "Barrage", tooltip = "By default the repeats of the one Empowered Attack are averaged over Barrage's cooldown (2 seconds plus a share of the empowered skill's attack time, minus the time spent casting Barrage).\nTick this to show the damage of the Empowered Attack alone." },
+ 	{ label = "Frost Bomb:", ifSkill = "Frost Bomb" },
+-- 
+2.55.0.windows.5
+
+
+From 881637684dff30952a392913e2b068b30ce32e80 Mon Sep 17 00:00:00 2001
+From: ndefrance <ndefrance@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 14:57:58 -0800
+Subject: [PATCH 2/8] Export: write x1.0 base multiplier rows of stat sets with
+ their own attack multiplier
+
+A 0 BaseMultiplier row (= x1.0) on a stat set with UseSetAttackMulti was skipped, so the
+engine fell back to stat set 1's multiplier at that level. Re-exported from 0.5.5e data:
+9 rows (Toxic Growth Explosion L20 0.62 -> 1.0, Blood Hunt, Gas Arrow, Primal Strikes,
+Rapid Assault, Whirling Slash, Whirlwind Lance, Oil Barrage, Shield Charge).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Data/Skills/act_dex.lua   | 14 +++++++-------
+ src/Data/Skills/act_str.lua   |  4 ++--
+ src/Export/Scripts/skills.lua |  3 ++-
+ 3 files changed, 11 insertions(+), 10 deletions(-)
+
+diff --git a/src/Data/Skills/act_dex.lua b/src/Data/Skills/act_dex.lua
+index 23475f1..a7b3294 100644
+--- a/src/Data/Skills/act_dex.lua
++++ b/src/Data/Skills/act_dex.lua
+@@ -453,7 +453,7 @@ skills["BloodHuntPlayer"] = {
+ 				"quality_display_active_skill_base_area_of_effect_radius_is_gem",
+ 			},
+ 			levels = {
+-				[1] = { 1, statInterpolation = { 1, }, actorLevel = 1, },
++				[1] = { 1, baseMultiplier = 1, statInterpolation = { 1, }, actorLevel = 1, },
+ 				[2] = { 1, baseMultiplier = 1.1, statInterpolation = { 1, }, actorLevel = 3.4519999027252, },
+ 				[3] = { 2, baseMultiplier = 1.21, statInterpolation = { 1, }, actorLevel = 6.7670001983643, },
+ 				[4] = { 3, baseMultiplier = 1.33, statInterpolation = { 1, }, actorLevel = 10.307999610901, },
+@@ -3036,7 +3036,7 @@ skills["GasArrowPlayer"] = {
+ 				[2] = { baseMultiplier = 0.77, actorLevel = 3.4519999027252, },
+ 				[3] = { baseMultiplier = 0.85, actorLevel = 6.7670001983643, },
+ 				[4] = { baseMultiplier = 0.92, actorLevel = 10.307999610901, },
+-				[5] = { actorLevel = 14.074999809265, },
++				[5] = { baseMultiplier = 1, actorLevel = 14.074999809265, },
+ 				[6] = { baseMultiplier = 1.07, actorLevel = 18.068000793457, },
+ 				[7] = { baseMultiplier = 1.15, actorLevel = 22.287000656128, },
+ 				[8] = { baseMultiplier = 1.22, actorLevel = 26.732000350952, },
+@@ -6181,7 +6181,7 @@ skills["PrimalStrikesPlayer"] = {
+ 				"is_final_strike",
+ 			},
+ 			levels = {
+-				[1] = { 10, statInterpolation = { 1, }, actorLevel = 1, },
++				[1] = { 10, baseMultiplier = 1, statInterpolation = { 1, }, actorLevel = 1, },
+ 				[2] = { 10, baseMultiplier = 1.1, statInterpolation = { 1, }, actorLevel = 3.4519999027252, },
+ 				[3] = { 10, baseMultiplier = 1.21, statInterpolation = { 1, }, actorLevel = 6.7670001983643, },
+ 				[4] = { 10, baseMultiplier = 1.32, statInterpolation = { 1, }, actorLevel = 10.307999610901, },
+@@ -6661,7 +6661,7 @@ skills["RapidAssaultPlayer"] = {
+ 				"global_knockback",
+ 			},
+ 			levels = {
+-				[1] = { actorLevel = 1, },
++				[1] = { baseMultiplier = 1, actorLevel = 1, },
+ 				[2] = { baseMultiplier = 1.1, actorLevel = 3.4519999027252, },
+ 				[3] = { baseMultiplier = 1.21, actorLevel = 6.7670001983643, },
+ 				[4] = { baseMultiplier = 1.32, actorLevel = 10.307999610901, },
+@@ -9782,7 +9782,7 @@ skills["ToxicGrowthPlayer"] = {
+ 				[17] = { 455, 218, 4552, 5450, baseMultiplier = 0.86, statInterpolation = { 1, 1, 1, 1, }, actorLevel = 76.906997680664, },
+ 				[18] = { 588, 282, 5872, 7050, baseMultiplier = 0.91, statInterpolation = { 1, 1, 1, 1, }, actorLevel = 83.611999511719, },
+ 				[19] = { 755, 363, 7555, 9075, baseMultiplier = 0.95, statInterpolation = { 1, 1, 1, 1, }, actorLevel = 90.542999267578, },
+-				[20] = { 969, 466, 9691, 11650, statInterpolation = { 1, 1, 1, 1, }, actorLevel = 97.699996948242, },
++				[20] = { 969, 466, 9691, 11650, baseMultiplier = 1, statInterpolation = { 1, 1, 1, 1, }, actorLevel = 97.699996948242, },
+ 				[21] = { 1032, 495, 10308, 12375, baseMultiplier = 1.05, statInterpolation = { 1, 1, 1, 1, }, actorLevel = 105.08300018311, },
+ 				[22] = { 1141, 547, 11402, 13675, baseMultiplier = 1.1, statInterpolation = { 1, 1, 1, 1, }, actorLevel = 112.69200134277, },
+ 				[23] = { 1324, 636, 13248, 15900, baseMultiplier = 1.16, statInterpolation = { 1, 1, 1, 1, }, actorLevel = 120.52700042725, },
+@@ -10730,7 +10730,7 @@ skills["WhirlingSlashPlayer"] = {
+ 				[4] = { baseMultiplier = 0.79, actorLevel = 10.307999610901, },
+ 				[5] = { baseMultiplier = 0.86, actorLevel = 14.074999809265, },
+ 				[6] = { baseMultiplier = 0.93, actorLevel = 18.068000793457, },
+-				[7] = { actorLevel = 22.287000656128, },
++				[7] = { baseMultiplier = 1, actorLevel = 22.287000656128, },
+ 				[8] = { baseMultiplier = 1.06, actorLevel = 26.732000350952, },
+ 				[9] = { baseMultiplier = 1.12, actorLevel = 31.40299987793, },
+ 				[10] = { baseMultiplier = 1.19, actorLevel = 36.299999237061, },
+@@ -10952,7 +10952,7 @@ skills["WhirlwindLancePlayer"] = {
+ 				[4] = { baseMultiplier = 0.79, actorLevel = 10.307999610901, },
+ 				[5] = { baseMultiplier = 0.86, actorLevel = 14.074999809265, },
+ 				[6] = { baseMultiplier = 0.93, actorLevel = 18.068000793457, },
+-				[7] = { actorLevel = 22.287000656128, },
++				[7] = { baseMultiplier = 1, actorLevel = 22.287000656128, },
+ 				[8] = { baseMultiplier = 1.06, actorLevel = 26.732000350952, },
+ 				[9] = { baseMultiplier = 1.12, actorLevel = 31.40299987793, },
+ 				[10] = { baseMultiplier = 1.19, actorLevel = 36.299999237061, },
+diff --git a/src/Data/Skills/act_str.lua b/src/Data/Skills/act_str.lua
+index 2f8d172..df9692f 100644
+--- a/src/Data/Skills/act_str.lua
++++ b/src/Data/Skills/act_str.lua
+@@ -14632,7 +14632,7 @@ skills["OilBarragePlayer"] = {
+ 				"skill_do_not_elapse_channel_time_while_barraging",
+ 			},
+ 			levels = {
+-				[1] = { actorLevel = 1, },
++				[1] = { baseMultiplier = 1, actorLevel = 1, },
+ 				[2] = { baseMultiplier = 1.1, actorLevel = 3.4519999027252, },
+ 				[3] = { baseMultiplier = 1.21, actorLevel = 6.7670001983643, },
+ 				[4] = { baseMultiplier = 1.32, actorLevel = 10.307999610901, },
+@@ -17232,7 +17232,7 @@ skills["ShieldChargePlayer"] = {
+ 				[2] = { 5, 8, 0, 0, 0, 6, 8, baseMultiplier = 0.77, statInterpolation = { 1, 1, 1, 1, 1, 1, 1, }, actorLevel = 3.4519999027252, },
+ 				[3] = { 8, 12, 0, 0, 0, 6, 8, baseMultiplier = 0.85, statInterpolation = { 1, 1, 1, 1, 1, 1, 1, }, actorLevel = 6.7670001983643, },
+ 				[4] = { 11, 17, 0, 0, 0, 6, 8, baseMultiplier = 0.93, statInterpolation = { 1, 1, 1, 1, 1, 1, 1, }, actorLevel = 10.307999610901, },
+-				[5] = { 14, 21, 0, 0, 0, 6, 8, statInterpolation = { 1, 1, 1, 1, 1, 1, 1, }, actorLevel = 14.074999809265, },
++				[5] = { 14, 21, 0, 0, 0, 6, 8, baseMultiplier = 1, statInterpolation = { 1, 1, 1, 1, 1, 1, 1, }, actorLevel = 14.074999809265, },
+ 				[6] = { 18, 26, 0, 0, 0, 6, 8, baseMultiplier = 1.08, statInterpolation = { 1, 1, 1, 1, 1, 1, 1, }, actorLevel = 18.068000793457, },
+ 				[7] = { 21, 32, 0, 0, 0, 6, 8, baseMultiplier = 1.16, statInterpolation = { 1, 1, 1, 1, 1, 1, 1, }, actorLevel = 22.287000656128, },
+ 				[8] = { 25, 37, 0, 0, 0, 6, 8, baseMultiplier = 1.24, statInterpolation = { 1, 1, 1, 1, 1, 1, 1, }, actorLevel = 26.732000350952, },
+diff --git a/src/Export/Scripts/skills.lua b/src/Export/Scripts/skills.lua
+index 119f64b..9b0bbde 100644
+--- a/src/Export/Scripts/skills.lua
++++ b/src/Export/Scripts/skills.lua
+@@ -547,7 +547,8 @@ directiveTable.set = function(state, args, out)
+ 			level.extra.critChance = (baseStatRow.OffhandCritChance + statRow.OffhandCritChance) / 100
+ 		end
+ 		-- If UseSetAttackMulti is true, then take the multi from the stat set, otherwise add the value from base set and current set
+-		if state.skill.setIndex ~= 1 and grantedEffectStatSet.UseSetAttackMulti and statRow.BaseMultiplier and statRow.BaseMultiplier ~= 0 then
++		-- A 0 row means x1.0; it must be written when stat set 1 has a multiplier at this level, or the engine falls back to set 1's value
++		if state.skill.setIndex ~= 1 and grantedEffectStatSet.UseSetAttackMulti and statRow.BaseMultiplier and (statRow.BaseMultiplier ~= 0 or (baseStatRow and baseStatRow.BaseMultiplier or 0) ~= 0) then
+ 			level.extra.baseMultiplier = statRow.BaseMultiplier / 10000 + 1
+ 		elseif state.skill.setIndex ~= 1 and not grantedEffectStatSet.UseSetAttackMulti and statRow.BaseMultiplier and statRow.BaseMultiplier ~= 0 then
+ 			if skill.levels[indx].extra.baseMultiplier then
+-- 
+2.55.0.windows.5
+
+
+From a6bbba04f6a977076adf424ecc27aefe7b3ab372 Mon Sep 17 00:00:00 2001
+From: ndefrance <ndefrance@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 15:01:25 -0800
+Subject: [PATCH 3/8] Ancestral Bond: parse "Your Totem Limit is doubled" and
+ apply MORE to the totem limit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Data/ModCache.lua       | 4 +---
+ src/Modules/CalcOffence.lua | 4 ++--
+ src/Modules/CalcPerform.lua | 3 ++-
+ src/Modules/ModParser.lua   | 1 +
+ 4 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/Data/ModCache.lua b/src/Data/ModCache.lua
+index 14da23c..0a5a289 100644
+--- a/src/Data/ModCache.lua
++++ b/src/Data/ModCache.lua
+@@ -9947,9 +9947,7 @@ c["Your Offerings can target Enemies in Culling range Your Offerings affect you
+ c["Your Offerings can target Enemies in Culling range Your Offerings affect you instead of your Minions Offerings created by Culling Enemies have 1% increased Effect per Power of Culled Enemy"]={nil,"Your Offerings can target Enemies in Culling range Your Offerings affect you instead of your Minions Offerings created by Culling Enemies have 1% increased Effect per Power of Culled Enemy "}
+ c["Your Spells are disabled"]={{[1]={[1]={skillType=2,type="SkillType"},flags=0,keywordFlags=0,name="DisableSkill",type="FLAG",value=true}},nil}
+ c["Your Spells have Culling Strike"]={{[1]={flags=2,keywordFlags=0,name="CanCull",type="FLAG",value=1}},nil}
+-c["Your Totem Limit is doubled"]={{},"Your  Limit  "}
+-c["Your Totem Limit is doubled No Charge requirement for placing Totems"]={{},"Your  Limit  No Charge requirement for placing Totems "}
+-c["Your Totem Limit is doubled No Charge requirement for placing Totems Totems reserve 75 Spirit each"]={{[1]={[1]={globalLimit=100,globalLimitKey="SpiritDoubledLimit",type="Multiplier",var="SpiritDoubled"},flags=0,keywordFlags=16384,name="Spirit",type="MORE",value=100},[2]={flags=0,keywordFlags=16384,name="Multiplier:SpiritDoubled",type="OVERRIDE",value=1}},"Your  Limit  No Charge requirement for placing Totems Totems reserve 75  each "}
++c["Your Totem Limit is doubled"]={{[1]={flags=0,keywordFlags=0,name="ActiveTotemLimit",type="MORE",value=100}},nil}
+ c["Your base Energy Shield Recharge Delay is 10 seconds"]={{[1]={flags=0,keywordFlags=0,name="EnergyShieldRechargeBase",type="OVERRIDE",value=10}},nil}
+ c["Your maximum Energy Shield is equal to 250% of your Strength"]={{[1]={[1]={percent=250,stat="Str",type="PercentStat"},flags=0,keywordFlags=0,name="EnergyShield",type="OVERRIDE",value=1}},nil}
+ c["Your maximum Energy Shield is equal to 300% of your Strength"]={{[1]={[1]={percent=300,stat="Str",type="PercentStat"},flags=0,keywordFlags=0,name="EnergyShield",type="OVERRIDE",value=1}},nil}
+diff --git a/src/Modules/CalcOffence.lua b/src/Modules/CalcOffence.lua
+index 5bb41e7..36745b4 100644
+--- a/src/Modules/CalcOffence.lua
++++ b/src/Modules/CalcOffence.lua
+@@ -1951,7 +1951,7 @@ function calcs.offence(env, actor, activeSkill)
+ 				total = s_format("= %.2f ^8per second", output.TotemPlacementSpeed),
+ 			})
+ 		end
+-		output.ActiveTotemLimit = skillModList:Override(skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit") or skillModList:Sum("BASE", skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit")
++		output.ActiveTotemLimit = skillModList:Override(skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit") or m_floor(skillModList:Sum("BASE", skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit") * skillModList:More(skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit"))
+ 		output.TotemsSummoned = env.modDB:Override(nil, "TotemsSummoned") or output.ActiveTotemLimit
+ 		if breakdown then
+ 			breakdown.ActiveTotemLimit = {
+@@ -5308,7 +5308,7 @@ function calcs.offence(env, actor, activeSkill)
+ 					ailmentStacks = ailmentStacks * globalOutput[ailment .. "Duration"] * (globalOutput.HitSpeed or globalOutput.Speed)
+ 				end
+ 
+-				local activeTotems = env.modDB:Override(nil, "TotemsSummoned") or skillModList:Sum("BASE", skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit")
++				local activeTotems = env.modDB:Override(nil, "TotemsSummoned") or m_floor(skillModList:Sum("BASE", skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit") * skillModList:More(skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit"))
+ 				if skillFlags.totem then
+ 					ailmentStacks = ailmentStacks * activeTotems
+ 				end
+diff --git a/src/Modules/CalcPerform.lua b/src/Modules/CalcPerform.lua
+index 6eaede6..3e54f44 100644
+--- a/src/Modules/CalcPerform.lua
++++ b/src/Modules/CalcPerform.lua
+@@ -1364,7 +1364,8 @@ function calcs.perform(env, skipEHP)
+ 		end
+ 		if skillFlags.totem then
+ 			local override = env.player.mainSkill.skillModList:Override(env.player.mainSkill.skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit" )
+-			local limit = override or env.player.mainSkill.skillModList:Sum("BASE", env.player.mainSkill.skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit" )
++			local skillModList, skillCfg = env.player.mainSkill.skillModList, env.player.mainSkill.skillCfg
++			local limit = override or m_floor(skillModList:Sum("BASE", skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit") * skillModList:More(skillCfg, "ActiveTotemLimit", "ActiveBallistaLimit"))
+ 			output.ActiveTotemLimit = m_max(limit, output.ActiveTotemLimit or 0)
+ 			output.TotemsSummoned = modDB:Override(nil, "TotemsSummoned") or output.ActiveTotemLimit
+ 			enemyDB.multipliers["TotemsSummoned"] = m_max(output.TotemsSummoned or 0, enemyDB.multipliers["TotemsSummoned"] or 0)
+diff --git a/src/Modules/ModParser.lua b/src/Modules/ModParser.lua
+index d24df3a..eaeb3b4 100644
+--- a/src/Modules/ModParser.lua
++++ b/src/Modules/ModParser.lua
+@@ -4772,6 +4772,7 @@ local specialModList = {
+ 	["totems gain %+(%d+)%% to (%w+) resistance"] = function(num, _, resistance) return { mod("Totem"..firstToUpper(resistance).."Resist", "BASE", num) } end,
+ 	["totems gain %+(%d+)%% to all elemental resistances"] = function(num) return { mod("TotemElementalResist", "BASE", num) } end,
+ 	["totems gain %+(%d+)%% to all maximum elemental resistances"] = function(num) return { mod("TotemElementalResistMax", "BASE", num) } end,
++	["your totem limit is doubled"] = { mod("ActiveTotemLimit", "MORE", 100) },
+ 	["totems reserve (%d+) spirit each"] = function(num) return {
+ 		flag("AncestralBond"),
+ 		mod("ExtraSpirit", "BASE", num, { type = "SkillType", skillType = SkillType.SummonsTotem })
+-- 
+2.55.0.windows.5
+
+
+From 9e43136d6c55b385b7e76b809a3bfa8e02dd69e9 Mon Sep 17 00:00:00 2001
+From: ndefrance <ndefrance@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 15:07:50 -0800
+Subject: [PATCH 4/8] Against the Darkness: add the two whole-line variants (25
+ of 25, poe2db)
+
+"Allocated Small Passive Skills in Radius grant nothing" and "Grants all bonuses of Unallocated
+Small Passive Skills in Radius" have no nodeType and were skipped by the generator. Appended
+after the sorted list so existing variant indices do not move.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Data/Uniques/Special/Generated.lua | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/Data/Uniques/Special/Generated.lua b/src/Data/Uniques/Special/Generated.lua
+index f1806fb..921d455 100644
+--- a/src/Data/Uniques/Special/Generated.lua
++++ b/src/Data/Uniques/Special/Generated.lua
+@@ -22,6 +22,12 @@ do
+ 		end
+ 	end
+ 	table.sort(againstMods, function(a, b) return a.name < b.name end)
++	-- the two whole-line variants (no nodeType) go last so the existing variant indices stay stable
++	for _, modName in ipairs({ "UniqueJewelRadiusAllocatedNonNotablesGrantNothing", "UniqueJewelRadiusGrantStatsFromNonNotables" }) do
++		if uniqueMods[modName] then
++			table.insert(againstMods, { mod = uniqueMods[modName], name = modName:match("^UniqueJewelRadius(.+)$"):gsub("([a-z])([A-Z])", "%1 %2") })
++		end
++	end
+ 	local against = {
+ 		"Against the Darkness",
+ 		"Time-Lost Diamond",
+@@ -40,7 +46,9 @@ do
+ 	local smallLine = "Small Passive Skills in Radius also grant "
+ 	local notableLine = "Notable Passive Skills in Radius also grant "
+ 	for index, mod in ipairs(againstMods) do
+-		if mod.mod.nodeType == 1 then
++		if not mod.mod.nodeType then
++			table.insert(against, "{variant:" .. index .. "," .. variantCount .. "}" .. mod.mod[1])
++		elseif mod.mod.nodeType == 1 then
+ 			table.insert(against, "{variant:" .. index .. "," .. variantCount .. "}" .. smallLine .. mod.mod[1])
+ 		else
+ 			table.insert(against, "{variant:" .. index .. "," .. variantCount .. "}" .. notableLine .. mod.mod[1])
+-- 
+2.55.0.windows.5
+
+
+From 2e286126e14bd582f95640f7fe5c60a3fc7418e7 Mon Sep 17 00:00:00 2001
+From: ndefrance <ndefrance@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 15:08:42 -0800
+Subject: [PATCH 5/8] Time-Lost jewels without a "Radius:" line default to
+ Small
+
+Pasted text without the line left jewelRadiusIndex nil and every radius line inert, with no warning.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Classes/Item.lua | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/Classes/Item.lua b/src/Classes/Item.lua
+index 93669de..b6690dc 100644
+--- a/src/Classes/Item.lua
++++ b/src/Classes/Item.lua
+@@ -1823,6 +1823,11 @@ function ItemClass:ParseRaw(raw, rarity, highQuality)
+ 	if self.jewelData and self.jewelData.timeLostJewelRadiusOverride then
+ 		self.jewelRadiusIndex = self.jewelData.timeLostJewelRadiusOverride
+ 	end
++	if not self.jewelRadiusIndex and self.base and self.base.subType == "Radius" then
++		-- Time-Lost jewels are Small unless upgraded; pasted text may lack the "Radius:" line
++		self.jewelRadiusIndex = 1
++		self.jewelRadiusLabel = data.jewelRadius[1].label
++	end
+ end
+ 
+ function ItemClass:NormaliseQuality()
+-- 
+2.55.0.windows.5
+
+
+From 37a1da3443c9b9f27ba4155233104eba352440a4 Mon Sep 17 00:00:00 2001
+From: ndefrance <ndefrance@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 15:09:58 -0800
+Subject: [PATCH 6/8] Grinning Immolation: self-Ignite degen (15% of maximum
+ Life and ES as Fire per second while Ignited)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Data/ModCache.lua     | 3 +--
+ src/Modules/ModParser.lua | 4 ++++
+ 2 files changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/Data/ModCache.lua b/src/Data/ModCache.lua
+index 0a5a289..b15e0e4 100644
+--- a/src/Data/ModCache.lua
++++ b/src/Data/ModCache.lua
+@@ -6692,8 +6692,7 @@ c["Bear Skills Convert 80% of Physical Damage to Fire Damage"]={{[1]={[1]={skill
+ c["Bear Spirit gains Embrace of the Wild"]={nil,"Bear Spirit gains Embrace of the Wild "}
+ c["Bear Spirit gains Embrace of the Wild Vivid Stags leap towards enemies"]={nil,"Bear Spirit gains Embrace of the Wild Vivid Stags leap towards enemies "}
+ c["Bear Spirit gains Embrace of the Wild Vivid Stags leap towards enemies Central Projectile of Owl Feather-Empowered Skills leaves a trail of Soaring Ground"]={nil,"Bear Spirit gains Embrace of the Wild Vivid Stags leap towards enemies Central Projectile of Owl Feather-Empowered Skills leaves a trail of Soaring Ground "}
+-c["Become Ignited when you deal a Critical Hit, taking 15% of your maximum Life and Energy Shield as Fire Damage per second"]={nil,"Become Ignited when you deal a Critical Hit, taking 15% of your maximum Life and Energy Shield as Fire Damage per second "}
+-c["Become Ignited when you deal a Critical Hit, taking 15% of your maximum Life and Energy Shield as Fire Damage per second 50% more Critical Damage Bonus"]={nil,"Become Ignited when you deal a Critical Hit, taking 15% of your maximum Life and Energy Shield as Fire Damage per second 50% more Critical Damage Bonus "}
++c["Become Ignited when you deal a Critical Hit, taking 15% of your maximum Life and Energy Shield as Fire Damage per second"]={{[1]={[1]={percent=15,stat="Life",type="PercentStat"},[2]={type="Condition",var="Ignited"},flags=0,keywordFlags=0,name="FireDegen",type="BASE",value=1},[2]={[1]={percent=15,stat="EnergyShield",type="PercentStat"},[2]={type="Condition",var="Ignited"},flags=0,keywordFlags=0,name="FireDegen",type="BASE",value=1}},nil}
+ c["Benefits from consuming Frenzy Charges for your Skills have 50% chance to be doubled"]={{[1]={flags=0,keywordFlags=0,name="Multiplier:ConsumedFrenzyChargeEffect",type="BASE",value="50"}},nil}
+ c["Bifurcates Critical Hits"]={{[1]={flags=0,keywordFlags=0,name="BifurcateCrit",type="FLAG",value=true}},nil}
+ c["Blackflame Covenant"]={{[1]={flags=0,keywordFlags=0,name="Keystone",type="LIST",value="Blackflame Covenant"},[2]={flags=0,keywordFlags=0,name="Condition:HaveBlackflameCovenant",type="FLAG",value=true}},nil}
+diff --git a/src/Modules/ModParser.lua b/src/Modules/ModParser.lua
+index eaeb3b4..e85a89d 100644
+--- a/src/Modules/ModParser.lua
++++ b/src/Modules/ModParser.lua
+@@ -5863,6 +5863,10 @@ local specialModList = {
+ 		mod("FireDegen", "BASE", 1, { type = "PercentStat", stat = "EnergyShield", percent = num }, { type = "Multiplier", var = "Level" }, { type = "Condition", var = "HerEmbrace" }),
+ 	} end,
+ 	["gain her embrace for %d+ seconds when you ignite an enemy"] = { flag("Condition:CanGainHerEmbrace") },
++	["become ignited when you deal a critical hit, taking (%d+)%% of your maximum life and energy shield as fire damage per second"] = function(num) return {
++		mod("FireDegen", "BASE", 1, { type = "PercentStat", stat = "Life", percent = num }, { type = "Condition", var = "Ignited" }),
++		mod("FireDegen", "BASE", 1, { type = "PercentStat", stat = "EnergyShield", percent = num }, { type = "Condition", var = "Ignited" }),
++	} end,
+ 	["when you cast a spell, sacrifice all mana to gain added maximum lightning damage equal to (%d+)%% of sacrificed mana for 4 seconds"] = function(num) return {
+ 		flag("Condition:HaveManaStorm"),
+ 		mod("LightningMax", "BASE", 1, { type = "PercentStat", stat = "ManaUnreserved" , percent = num }, { type = "Condition", var = "SacrificeManaForLightning" }),
+-- 
+2.55.0.windows.5
+
+
+From fae091133fede6fa99cf2989778f47d3bc764e2d Mon Sep 17 00:00:00 2001
+From: ndefrance <ndefrance@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 15:11:18 -0800
+Subject: [PATCH 7/8] Scarred Faith: parse "You cannot Recover Energy Shield
+ from Regeneration"
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Data/ModCache.lua     | 3 +--
+ src/Modules/ModParser.lua | 1 +
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/Data/ModCache.lua b/src/Data/ModCache.lua
+index b15e0e4..090f63d 100644
+--- a/src/Data/ModCache.lua
++++ b/src/Data/ModCache.lua
+@@ -9839,8 +9839,7 @@ c["You can only Socket Ruby Jewels in this item"]={{[1]={flags=0,keywordFlags=0,
+ c["You can only Socket Sapphire Jewels in this item"]={{[1]={flags=0,keywordFlags=0,name="JewelSocketRestriction",type="FLAG",value=true},[2]={flags=0,keywordFlags=0,name="CanSocketJewelBaseSapphire",type="FLAG",value=true}},nil}
+ c["You can only deal Damage with this Weapon or Ignite"]={nil,"You can only deal Damage with this Weapon or Ignite "}
+ c["You can wield Two-Handed Axes, Maces and Swords in one hand"]={{[1]={flags=0,keywordFlags=0,name="GiantsBlood",type="FLAG",value=true}},nil}
+-c["You cannot Recover Energy Shield from Regeneration"]={nil,"You cannot Recover Energy Shield from Regeneration "}
+-c["You cannot Recover Energy Shield from Regeneration You cannot Recover Energy Shield to above Armour"]={nil,"You cannot Recover Energy Shield from Regeneration You cannot Recover Energy Shield to above Armour "}
++c["You cannot Recover Energy Shield from Regeneration"]={{[1]={flags=0,keywordFlags=0,name="NoEnergyShieldRegen",type="FLAG",value=true}},nil}
+ c["You cannot Recover Energy Shield to above Armour"]={{[1]={flags=0,keywordFlags=0,name="ArmourESRecoveryCap",type="FLAG",value=true}},nil}
+ c["You cannot Sprint"]={{[1]={flags=0,keywordFlags=0,name="Condition:CannotSprint",type="FLAG",value=true}},nil}
+ c["You cannot be Chilled for 6 seconds after being Chilled"]={nil,"You cannot be Chilled for 6 seconds after being Chilled "}
+diff --git a/src/Modules/ModParser.lua b/src/Modules/ModParser.lua
+index e85a89d..93c6ee5 100644
+--- a/src/Modules/ModParser.lua
++++ b/src/Modules/ModParser.lua
+@@ -5202,6 +5202,7 @@ local specialModList = {
+ 	["y?o?u? ?cannot recharge energy shield"] = { flag("NoEnergyShieldRecharge") },
+ 	["energy shield does not recharge"] = { flag("NoEnergyShieldRecharge") },
+ 	["you cannot regenerate energy shield" ] = { flag("NoEnergyShieldRegen") },
++	["you cannot recover energy shield from regeneration"] = { flag("NoEnergyShieldRegen") },
+ 	["cannot recharge or regenerate energy shield"] = { flag("NoEnergyShieldRecharge"), flag("NoEnergyShieldRegen") },
+ 	["enemies you (%a+) cannot recharge energy shield"] = function(_, cond) return {
+ 		mod("EnemyModifier", "LIST", { mod = flag("NoEnergyShieldRecharge" )}, { type = "Condition", var = cond:gsub("^%a", string.upper) })
+-- 
+2.55.0.windows.5
+
+
+From 5f2618e4bddcdae7105e3375ff08c1a928277059 Mon Sep 17 00:00:00 2001
+From: ndefrance <ndefrance@users.noreply.github.com>
+Date: Sun, 1 Nov 2026 15:12:18 -0800
+Subject: [PATCH 8/8] Corrupted Lifeforce: damage against enemies affected by
+ Blood Boils (enemy condition + config option)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/Data/ModCache.lua         | 5 ++---
+ src/Modules/ConfigOptions.lua | 4 ++++
+ src/Modules/ModParser.lua     | 1 +
+ 3 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/Data/ModCache.lua b/src/Data/ModCache.lua
+index 090f63d..efe9346 100644
+--- a/src/Data/ModCache.lua
++++ b/src/Data/ModCache.lua
+@@ -2444,8 +2444,7 @@ c["15% less Movement Speed"]={{[1]={flags=0,keywordFlags=0,name="MovementSpeed",
+ c["15% less Spirit"]={{[1]={flags=0,keywordFlags=0,name="Spirit",type="MORE",value=-15}},nil}
+ c["15% less maximum Life"]={{[1]={flags=0,keywordFlags=0,name="Life",type="MORE",value=-15}},nil}
+ c["15% less maximum Mana"]={{[1]={flags=0,keywordFlags=0,name="Mana",type="MORE",value=-15}},nil}
+-c["15% more Damage against Enemies affected by Blood Boils"]={{[1]={flags=0,keywordFlags=0,name="Damage",type="MORE",value=15}},"  against Enemies affected by Blood Boils "}
+-c["15% more Damage against Enemies affected by Blood Boils Grants Skill: Blood Boil"]={{[1]={[1]={includeTransfigured=true,skillName="Blood Boil",type="SkillName"},flags=0,keywordFlags=0,name="Damage",type="MORE",value=15}},"  against Enemies affected by Blood Boils Grants Skill:"}
++c["15% more Damage against Enemies affected by Blood Boils"]={{[1]={[1]={actor="enemy",type="ActorCondition",var="AffectedByBloodBoil"},flags=0,keywordFlags=0,name="Damage",type="MORE",value=15}},nil}
+ c["15% more Maximum Life"]={{[1]={flags=0,keywordFlags=0,name="Life",type="MORE",value=15}},nil}
+ c["15% of Damage Taken Recouped as Life, Mana and Energy Shield"]={{[1]={flags=0,keywordFlags=0,name="LifeRecoup",type="BASE",value=15},[2]={flags=0,keywordFlags=0,name="EnergyShieldRecoup",type="BASE",value=15},[3]={flags=0,keywordFlags=0,name="ManaRecoup",type="BASE",value=15}},nil}
+ c["15% of Damage from Deflected Hits is taken from Damageable Companion's Life before you"]={{[1]={flags=0,keywordFlags=0,name="TakenFromCompanionBeforeYouFromDeflected",type="BASE",value=15}},nil}
+@@ -5001,8 +5000,8 @@ c["8 to 14 Fire Damage per Endurance Charge"]={{[1]={[1]={type="Multiplier",var=
+ c["8% Global chance to Blind Enemies on Hit"]={{[1]={[1]={type="Global"},flags=0,keywordFlags=0,name="BlindChance",type="BASE",value=8}},"%  chance  "}
+ c["8% additional Physical Damage Reduction"]={{[1]={flags=0,keywordFlags=0,name="PhysicalDamageReduction",type="BASE",value=8}},nil}
+ c["8% chance for Mace Slam Skills you use yourself to cause an additional Aftershock"]={{}," for Mace Slam Skills you use yourself to cause an additional Aftershock "}
+-end)();(function()
+ c["8% chance for Slam Skills you use yourself to cause an additional Aftershock"]={{}," for Slam Skills you use yourself to cause an additional Aftershock "}
++end)();(function()
+ c["8% chance for Spell Skills to fire 2 additional Projectiles"]={{[1]={flags=2,keywordFlags=0,name="TwoAdditionalProjectilesChance",type="BASE",value=8}},nil}
+ c["8% chance for Spell Skills to fire 8 additional Projectiles in a circle"]={{[1]={flags=2,keywordFlags=0,name="ProjectileCount",type="BASE",value=8}},"  to fire 8 additional  in a circle "}
+ c["8% chance to Aggravate Bleeding on targets you Hit with Attacks"]={{[1]={flags=5,keywordFlags=0,name="AggravateBleedChance",type="BASE",value=8}},nil}
+diff --git a/src/Modules/ConfigOptions.lua b/src/Modules/ConfigOptions.lua
+index 7883e07..3dbf98d 100644
+--- a/src/Modules/ConfigOptions.lua
++++ b/src/Modules/ConfigOptions.lua
+@@ -311,6 +311,10 @@ local configSettings = {
+ 	{ var = "bladestormInSandstorm", type = "check", label = "Are you in a Sandstorm?", ifSkill = "Bladestorm", includeTransfigured = true, apply = function(val, modList, enemyModList)
+ 		modList:NewMod("Condition:BladestormInSandstorm", "FLAG", true, "Config", { type = "SkillName", skillName = "Bladestorm", includeTransfigured = true })
+ 	end },
++	{ label = "Blood Boil:", ifSkill = "Blood Boil" },
++	{ var = "conditionEnemyBloodBoils", type = "check", label = "Is the enemy affected by Blood Boils?", ifSkill = "Blood Boil", tooltip = "Enemies in your Presence accumulate Blood Boils periodically while Blood Boil is active.", apply = function(val, modList, enemyModList)
++		enemyModList:NewMod("Condition:AffectedByBloodBoil", "FLAG", true, "Config", { type = "Condition", var = "Effective" })
++	end },
+ 	{ label = "Blood Sacrament:", ifSkill = "Blood Sacrament" },
+ 	{ var = "bloodSacramentReservationEHP", type = "check", label = "Count Skill Reservation towards eHP?", ifSkill = "Blood Sacrament", tooltip = "Use this option to disable the skill reservation factoring into eHP calculations",apply = function(val, modList, enemyModList)
+ 		modList:NewMod("Condition:BloodSacramentReservationEHP", "FLAG", true, "Config")
+diff --git a/src/Modules/ModParser.lua b/src/Modules/ModParser.lua
+index 93c6ee5..5e204f4 100644
+--- a/src/Modules/ModParser.lua
++++ b/src/Modules/ModParser.lua
+@@ -2144,6 +2144,7 @@ local modTagList = {
+ 	["to poisoned enemies"] = { tag = { type = "ActorCondition", actor = "enemy", var = "Poisoned" } },
+ 	["against enemies affected by (%d+) or more poisons"] = function(num) return { tag = { type = "MultiplierThreshold", actor = "enemy", var = "PoisonStacks", threshold = num } } end,
+ 	["against enemies affected by at least (%d+) poisons"] = function(num) return { tag = { type = "MultiplierThreshold", actor = "enemy", var = "PoisonStacks", threshold = num } } end,
++	["against enemies affected by blood boils"] = { tag = { type = "ActorCondition", actor = "enemy", var = "AffectedByBloodBoil" } },
+ 	["against enemies affected by incision"] =  { tag = { type = "MultiplierThreshold", actor = "enemy", var = "IncisionStack", threshold = 1 } } ,
+ 	["against hindered enemies"] = { tag = { type = "ActorCondition", actor = "enemy", var = "Hindered" } },
+ 	["against maimed enemies"] = { tag = { type = "ActorCondition", actor = "enemy", var = "Maimed" } },
+-- 
+2.55.0.windows.5
+

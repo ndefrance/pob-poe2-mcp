@@ -116,10 +116,10 @@ export class ValidationService {
       currentValue: current,
       recommendedValue: cap,
       suggestions: [
-        `Craft +${cap - current}% ${name} Resistance on gear with open suffix`,
+        `Add +${cap - current}% ${name} Resistance to gear (Essence of relevant element on jewelry, or rune slot)`,
         `Use a ${name.toLowerCase()} resistance flask temporarily`,
         `Allocate resistance nodes on the passive tree`,
-        `Upgrade jewelry pieces - rings and amulets can have high resistance rolls`,
+        `Upgrade jewelry — Prismatic Ring (+all res implicit), ${name === 'Cold' ? 'Sapphire' : name === 'Fire' ? 'Ruby' : name === 'Lightning' ? 'Topaz' : 'Amethyst'} Ring + rare suffixes`,
       ],
       location: 'Gear',
     };
@@ -137,9 +137,9 @@ export class ValidationService {
       currentValue: value,
       recommendedValue: isCritical ? 20 : 0,
       suggestions: [
-        `Craft chaos resistance on gear (rings, amulet, belt have suffix slots)`,
-        `Use an Amethyst Flask for +35% temporary chaos resistance`,
-        `Consider taking chaos resistance notables on the tree`,
+        `Add chaos resistance suffixes to jewelry (rings, amulet, belt) — PoE2 chaos res caps at 75%`,
+        `Wear an Amethyst Ring base (chaos res implicit)`,
+        `Consider chaos resistance notables on the tree`,
         ...(isCritical ? [`Prioritize this — at ${value}% you take ${Math.round((1 + Math.abs(value) / 100) * 100)}% of chaos damage`] : []),
       ],
       location: 'Gear',
@@ -184,16 +184,16 @@ export class ValidationService {
         recommendedValue: expectedHP,
         suggestions: isESBuild
           ? [
-              `Increase %ES on gear (chest, shield)`,
+              `Increase %ES on gear (body armour, helm, shield)`,
               `Allocate more ES nodes on the passive tree`,
-              `Consider using a Discipline aura`,
-              `Upgrade your chest piece to a higher base ES armor`,
+              `Consider Spirit-cost ES reservation skills if available`,
+              `Upgrade body armour to a higher base ES roll`,
             ]
           : [
-              `Look for nearby life nodes on the passive tree`,
-              `Add +maximum life to jewelry (rings, amulets, belt)`,
+              `Look for nearby +max life nodes and life clusters on the passive tree`,
+              `Add +maximum life to jewelry (rings, amulets, belt) and body armour`,
               `Increase %maximum life from gear and tree`,
-              `Consider the Scion life wheel if nearby (+24% life)`,
+              `Check that no notable life keystones are currently dropping you down (e.g. life-to-ES conversion keystones)`,
             ],
         location: isESBuild ? 'Gear & Tree' : 'Gear & Tree',
       });
@@ -247,10 +247,10 @@ export class ValidationService {
         currentValue: manaUnreserved,
         recommendedValue: 100,
         suggestions: [
-          'Reduce aura reservation',
-          'Add Enlighten Support to aura links',
-          'Use -mana cost crafts on rings/amulet',
-          'Consider Elreon -mana cost crafted jewelry',
+          'Reduce reservation (PoE2: check Spirit reservations, not just mana auras)',
+          'Add -X to mana cost of skills affixes to rings or amulet',
+          'Use a Mana Flask with Mixologist suffix for sustained casting',
+          'Increase max mana via gear (Sapphire-tier jewelry, hybrid mana rolls)',
         ],
         location: 'Gear & Skills',
       });
@@ -263,8 +263,8 @@ export class ValidationService {
         currentValue: manaUnreserved,
         recommendedValue: 150,
         suggestions: [
-          'Reduce aura reservation slightly',
-          'Add -mana cost crafts',
+          'Reduce reservation slightly (Spirit or Mana, depending on what is being reserved)',
+          'Add -mana cost of skills affixes to gear',
           'Consider increasing mana pool or regeneration',
         ],
         location: 'Gear & Skills',
@@ -281,10 +281,10 @@ export class ValidationService {
         currentValue: manaRegen,
         recommendedValue: 100,
         suggestions: [
-          'Enable Clarity aura',
-          'Allocate mana regeneration nodes',
-          'Add mana regeneration to gear',
-          'Consider a mana flask for long fights',
+          'Enable a mana regeneration buff if available (Clarity-equivalent in PoE2)',
+          'Allocate mana regeneration nodes on the passive tree',
+          'Add #% increased mana regeneration affixes to gear',
+          'Use a mana flask for long fights or reserve less Spirit',
         ],
         location: 'Gear & Tree',
       });
@@ -380,12 +380,12 @@ export class ValidationService {
         title: 'No Freeze Immunity',
         description: 'You have no freeze immunity. Getting frozen leaves you unable to act and is often fatal.',
         suggestions: [
-          `Add a "of Heat" suffix to a utility flask`,
-          `Use an Aquamarine Flask for freeze immunity`,
-          `Consider the Brine King pantheon upgrade`,
-          `Some items grant freeze immunity (e.g., unique boots)`,
+          `Add freeze threshold mods to gear or flasks/charms`,
+          `Use a charm with freeze removal (e.g. Thawing Charm)`,
+          `Some keystones or ascendancy nodes grant freeze immunity`,
+          `Cold resistance helps reduce ailment threshold; consider overcapping`,
         ],
-        location: 'Flasks',
+        location: 'Flasks/Charms',
       });
     }
 
@@ -453,7 +453,7 @@ export class ValidationService {
           'A build relying on a single layer will die when that layer is bypassed.',
         suggestions: [
           !hasAvoidance ? 'Avoidance: evasion (Grace aura), spell suppression (50%), dodge (Acrobatics), or block (shield)' : 'Avoidance: ✓ active',
-          !hasMitigation ? 'Mitigation: armour (Determination aura), endurance charges, or high PDR' : 'Mitigation: ✓ active',
+          !hasMitigation ? 'Mitigation: armour gear, endurance charges, or high physical damage reduction' : 'Mitigation: ✓ active',
           !hasRecovery ? 'Recovery: life regen nodes, life leech, or gain-on-hit' : 'Recovery: ✓ active',
         ].filter((s) => !s.endsWith('✓ active')),
         location: 'Gear & Tree',
@@ -531,14 +531,15 @@ export class ValidationService {
           title: 'No "More" Multiplier Supports Detected',
           description:
             'Main skill appears to use only "increased" damage supports. ' +
-            '"More" multipliers (Controlled Destruction, Elemental Focus, Multistrike, etc.) ' +
-            'are multiplicative and are the primary way to scale DPS in PoE.',
+            'PoE2 0.5 "more" multiplier supports (Heft, Brutality, Concentrated Area, ' +
+            'Magnified Area, Premeditation, Hourglass, Primal Strikes, etc.) ' +
+            'are multiplicative and are the primary way to scale DPS.',
           suggestions: [
             'Replace an "increased" support with a "more" multiplier',
-            'Spell builds: Controlled Destruction, Elemental Focus, Spell Echo',
-            'Attack builds: Multistrike, Brutality, Impale, Close Combat',
-            'DoT builds: Efficacy, Swift Affliction, Deadly Ailments',
-            'Minion builds: Minion Damage, Feeding Frenzy',
+            'Spell builds: Concentrated Area, Magnified Area, Hourglass, Spell Cascade',
+            'Attack builds: Heft, Brutality, Primal Strikes, Close Combat, Ambush',
+            'DoT builds: Persistent Ground, Magnified Area, Withering Touch',
+            'Projectile builds: Fork, Chain, Pierce, Longshot, Ice-Tipped Arrows',
           ],
           location: 'Skills',
         });

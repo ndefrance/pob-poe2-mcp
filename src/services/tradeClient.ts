@@ -20,7 +20,10 @@ import {
  * - Rate limit header parsing
  */
 export class TradeApiClient {
-  private readonly baseUrl = 'https://www.pathofexile.com/api/trade';
+  // PoE2 trade API (parallel to PoE1's /api/trade)
+  private readonly baseUrl = process.env.POE2_MODE !== 'false'
+    ? 'https://www.pathofexile.com/api/trade2'
+    : 'https://www.pathofexile.com/api/trade';
   private readonly limiter: Bottleneck;
   private readonly cache = new Map<string, CacheEntry<any>>();
   private readonly defaultCacheTTL: number;
